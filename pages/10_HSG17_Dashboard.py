@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """
-HSG17 Validation Error Dashboard
-Clean, executive view for the HSG17 site.
-
-- Current-state only (latest per Block + category)
-- Beautiful widget-style cards with deltas
-- Reuses the exact central log format as the T0-to-Host tool
-- Same delta + "get to zero" philosophy as the JPB15/SYD20 dashboard
+HSG17 Validation Dashboard
+Executive view for the HSG17 site.
+Current-state only (latest per Block + category)
 """
 
 import streamlit as st

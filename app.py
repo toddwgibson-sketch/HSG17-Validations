@@ -11,8 +11,8 @@ st.markdown("""
 Welcome to the HSG17 validation toolkit.
 
 **Available pages:**
-- **01_HSG17_T0_to_Host** — Clean processor with mismatch clustering + PP enrichment
-- **10_HSG17_Dashboard** — Executive current-state view by DH Block (deltas, cards, progress to zero)
+- **01_HSG17_T0_to_Host** — 
+- **10_HSG17_Dashboard** — 
 
 Use the sidebar to navigate.
 """)

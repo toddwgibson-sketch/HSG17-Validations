@@ -12,8 +12,8 @@ from utils.hsg17_models import derive_placement_group
 require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
-st.title("HSG17 T0-to-Host Validator (T1-to-T0 Gold)")
-st.caption("Exact gold logic • Tracks by Placement Group (per Bootstrap Sequence) • Feeds central Dashboard")
+st.title("HSG17 T0-to-Host Validaton Formatter")
+st.caption("")
 
 st.markdown("""
 **Inputs:**
@@ -42,7 +42,7 @@ with st.sidebar:
         accept_multiple_files=True,
         help="The T1toT0 allconnections or master cutsheet for enrichment."
     )
-    run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
+    run_btn = st.button("Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
 
 if run_btn and lv_file and cutsheet_files:
     with st.spinner("Formatting using the exact gold logic..."):

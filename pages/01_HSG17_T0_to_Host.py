@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""
-HSG17 T0-to-Host / T1-to-T0 Validator — replacement using gold reference
 
-This replaces the previous broken T0-to-Host implementation.
-Uses the exact working T1-to-T0 formatter (lv_portal_formatter_T1toT0.v2 gold).
-
-Retains central logging so the HSG17 Dashboard continues to work with all its features.
-"""
 
 import streamlit as st
 import tempfile

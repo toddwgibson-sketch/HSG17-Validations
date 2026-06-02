@@ -12,8 +12,8 @@ from utils.hsg17_models import derive_placement_group
 require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
-st.title("HSG17 T0-to-Host Validator (T1-to-T0 Gold)")
-st.caption("Exact gold logic • Tracks by Placement Group (per Bootstrap Sequence) • Feeds central Dashboard")
+st.title("HSG17 T0-to-Host Validaton Formatter")
+st.caption("")
 
 with st.sidebar:
     lv_file = st.file_uploader(
@@ -28,7 +28,7 @@ with st.sidebar:
         accept_multiple_files=True,
         label_visibility="collapsed"
     )
-    run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
+    run_btn = st.button("Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
 
 if run_btn and lv_file and cutsheet_files:
     with st.spinner(""):

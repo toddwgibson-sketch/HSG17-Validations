@@ -11,8 +11,8 @@ st.markdown("""
 Welcome to the HSG17 validation toolkit.
 
 **Available pages:**
-- **01_HSG17_T0_to_Host** — T1-to-T0 gold formatter (replaces previous T0-to-Host impl; produces the 5 perfect tabs)
-- **10_HSG17_Dashboard** — Executive view (current state + deltas; fully retained)
+- **01_HSG17_T0_to_Host** — T1-to-T0 formatter ()
+- **10_HSG17_Dashboard** — Executive view (current state + deltas)
 
 Use the sidebar to navigate.
 """)

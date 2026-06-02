@@ -87,24 +87,40 @@ if run_btn and lv_file and cutsheet_files:
 
             # ====================== SILENT CENTRAL LOGGING (to retain Dashboard features) ======================
             # Log the counts so the HSG17 Dashboard shows current state + deltas.
-            # Use placement group (from rack in allc, per HSG17 Bootstrap Sequence)
+            # Use placement group from the LV export (the actual devices/ports with errors), per HSG17 Bootstrap Sequence
+            # This ensures correct PG for the issues (e.g. rack 3110 -> PG14), not from allc which spans many PGs
             try:
                 source_name = lv_file.name if lv_file else "unknown"
-                placement = "PG14"  # fallback for rack 3110 case
+                placement = "PG14"  # fallback for the rack 3110 case user mentioned
                 try:
                     import pandas as pd
-                    if cuts_tmp_paths:
-                        allc_df = pd.read_excel(cuts_tmp_paths[0], sheet_name=0)
-                        rack_cols = [c for c in allc_df.columns if "rack" in str(c).lower()]
-                        if rack_cols:
-                            racks = allc_df[rack_cols[0]].dropna().astype(str).str.replace(r"Rack\s*", "", regex=True).str.strip().str.split().str[0]
-                            racks = racks[racks.str.len() > 0]
-                            if len(racks) > 0:
-                                pgs = racks.apply(derive_placement_group)
-                                most_common = pgs.value_counts().index[0]
-                                if most_common and most_common.startswith("PG"):
-                                    placement = most_common
-                except Exception:
+                    import re
+                    from collections import Counter
+                    from utils.hsg17_models import derive_placement_group
+                    if 'lv_tmp' in locals() and lv_tmp.exists():
+                        lv_df_dict = pd.read_excel(lv_tmp, sheet_name=None)
+                        rack_nums = []
+                        for sheet_name, sheet_df in lv_df_dict.items():
+                            for col in sheet_df.columns:
+                                col_l = str(col).lower()
+                                if 'device' in col_l or 'source' in col_l:
+                                    for val in sheet_df[col].dropna().astype(str):
+                                        # device names like ...-r3110 or t0-r3110 or hsg17-...r3110
+                                        m = re.search(r'r(\d{3,4})', val.lower())
+                                        if m:
+                                            rack_nums.append(m.group(1).zfill(4))
+                                        else:
+                                            # fallback numeric 4-digit rack (focus on relevant)
+                                            m2 = re.search(r'\b(\d{4})\b', val)
+                                            if m2 and 1000 < int(m2.group(1)) < 9999:
+                                                rack_nums.append(m2.group(1))
+                        if rack_nums:
+                            pgs = [derive_placement_group(r) for r in rack_nums]
+                            most_common = Counter(pgs).most_common(1)[0][0]
+                            if most_common and most_common.startswith('PG'):
+                                placement = most_common
+                except Exception as e:
+                    # keep fallback
                     pass
                 for cat_key, cnt in counts.items():
                     if cnt > 0:
@@ -119,7 +135,7 @@ if run_btn and lv_file and cutsheet_files:
                         log_errors(
                             hall="HSG17",
                             rack_type="T1-T0",
-                            building=placement,  # placement group e.g. "PG14"
+                            building=placement,  # e.g. PG14
                             error_category=cat_name,
                             count=int(cnt),
                             source_file=source_name,

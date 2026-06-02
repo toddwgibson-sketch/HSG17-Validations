@@ -15,7 +15,7 @@ from utils.t1_to_t0_formatter import format_report
 require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
-st.title("HSG17 T0-to-Host Validator)")
+st.title("HSG17 T0-to-Host Validator")
 st.caption("")
 
 st.markdown("""
@@ -116,4 +116,4 @@ elif not (lv_file and cutsheet_files):
     st.info("Upload the LV Portal export and at least one cutsheet / allconnections file, then click Generate.")
 
 st.markdown("---")
-st.caption("HSG17 • Gold T1-to-T0 formatter • Same central log as before so the Dashboard and all its features continue to work • All processing is local.")
+st.caption("")

@@ -15,23 +15,37 @@ st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="w
 st.title("HSG17 T0-to-Host Validator (T1-to-T0 Gold)")
 st.caption("Exact gold logic • Tracks by Placement Group (per Bootstrap Sequence) • Feeds central Dashboard")
 
+st.markdown("""
+**Inputs:**
+- **LV Portal Validation Export** (.xlsx): the export with sheets like Optic Errors, FEC_BER Errors, Interface Down Errors (and optional LLDP/mismatch).
+- **Master Cutsheet(s) / Allconnections**: your T1toT0 allc (or master cutsheet). The lookup supports the columns in QFABT1toT0_..._allconnections.xlsx (DeviceA/DeviceB combined host+port, RackA/RackB, Source_port, DMARC*, Destination_port, EasyMark+, Physical Ports etc.).
+
+Issues are tracked by **Placement Group** (see HSG17 Bootstrap Sequence for rack->PG mapping; e.g. rack 3110 = PG14).
+
+For your untouched original Dashboard compatibility the error categories are logged under the original names (LLDP Mismatch + Link Down etc.).
+
+Upload, generate, download the `_formatted.xlsx` with the 5 perfect tabs (Summary navy, Mispatches red, Downlinks orange, Optics brown, FEC Errors purple).
+All processing is local.
+""")
+
 with st.sidebar:
+    st.header("Inputs")
     lv_file = st.file_uploader(
-        "",
+        "LV Portal Validation Export (.xlsx)",
         type=["xlsx", "xlsm"],
         accept_multiple_files=False,
-        label_visibility="collapsed"
+        help="The export containing the error sheets (Optic, FEC, Interface Down, ...)"
     )
     cutsheet_files = st.file_uploader(
-        "",
+        "Master Cutsheet(s) / Allconnections (hold Ctrl or Cmd for multiple)",
         type=["xlsx", "xlsm"],
         accept_multiple_files=True,
-        label_visibility="collapsed"
+        help="The T1toT0 allconnections or master cutsheet for enrichment."
     )
     run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
 
 if run_btn and lv_file and cutsheet_files:
-    with st.spinner(""):
+    with st.spinner("Formatting using the exact gold logic..."):
         tmpdir = Path(tempfile.mkdtemp(prefix="hsg17_t1t0_"))
         try:
             # Write uploads to temp files (the formatter expects real paths + load_workbook)

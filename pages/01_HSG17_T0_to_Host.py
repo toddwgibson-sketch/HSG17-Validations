@@ -19,7 +19,7 @@ st.markdown("""
 **Instructions:**
 - **LV Portal Validation Export** - Upload your LVV Portal file using the sidebar on the left
 
-- **Master Cutsheet/Allconnect Report - Upload the corresponding cutsheet aswell
+- **Master Cutsheet/Allconnect Report** - Upload the corresponding cutsheet aswell
 
 Hit Generate Formatted Report, once calculated it will be available for download by clicking the download report button
 

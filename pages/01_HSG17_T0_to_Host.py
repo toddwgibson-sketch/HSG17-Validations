@@ -23,37 +23,23 @@ st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="w
 st.title("HSG17 T0-to-Host Validator (T1-to-T0 Gold)")
 st.caption("Exact gold logic • Tracks by Placement Group (per Bootstrap Sequence) • Feeds central Dashboard")
 
-st.markdown("""
-**Inputs:**
-- **LV Portal Validation Export** (.xlsx): the export with sheets like Optic Errors, FEC_BER Errors, Interface Down Errors (and optional LLDP/mismatch).
-- **Master Cutsheet(s) / Allconnections**: your T1toT0 allc (or master cutsheet). The lookup supports the columns in QFABT1toT0_..._allconnections.xlsx (DeviceA/DeviceB combined host+port, RackA/RackB, Source_port, DMARC*, Destination_port, EasyMark+, Physical Ports etc.).
-
-Issues are tracked by **Placement Group** (see HSG17 Bootstrap Sequence for rack->PG mapping; e.g. rack 3110 = PG14).
-
-For your untouched original Dashboard compatibility the error categories are logged under the original names (LLDP Mismatch + Link Down etc.).
-
-Upload, generate, download the `_formatted.xlsx` with the 5 perfect tabs (Summary navy, Mispatches red, Downlinks orange, Optics brown, FEC Errors purple).
-All processing is local.
-""")
-
 with st.sidebar:
-    st.header("Inputs")
     lv_file = st.file_uploader(
-        "LV Portal Validation Export (.xlsx)",
+        "",
         type=["xlsx", "xlsm"],
         accept_multiple_files=False,
-        help="The export containing the error sheets (Optic, FEC, Interface Down, ...)"
+        label_visibility="collapsed"
     )
     cutsheet_files = st.file_uploader(
-        "Master Cutsheet(s) / Allconnections (hold Ctrl or Cmd for multiple)",
+        "",
         type=["xlsx", "xlsm"],
         accept_multiple_files=True,
-        help="The T1toT0 allconnections or master cutsheet for enrichment."
+        label_visibility="collapsed"
     )
-    run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
+    run_btn = st.button("", type="primary", disabled=not (lv_file and cutsheet_files))
 
 if run_btn and lv_file and cutsheet_files:
-    with st.spinner("Formatting using the exact gold logic..."):
+    with st.spinner(""):
         tmpdir = Path(tempfile.mkdtemp(prefix="hsg17_t1t0_"))
         try:
             # Write uploads to temp files (the formatter expects real paths + load_workbook)
@@ -72,18 +58,13 @@ if run_btn and lv_file and cutsheet_files:
             # Read result for download
             out_bytes = out_path.read_bytes()
 
-            st.success("✅ Report generated with the exact reference logic.")
-            st.write("**Counts:**", counts)
-
             st.download_button(
-                label=f"📥 Download {out_path.name}",
+                label="",
                 data=out_bytes,
                 file_name=out_path.name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
-
-            st.info("The output has the 5 tabs, exact column orders, pair borders, styling, and enrichment from the gold formatter.")
 
             # ====================== SILENT CENTRAL LOGGING (to retain Dashboard features) ======================
             # Log the counts so the HSG17 Dashboard shows current state + deltas.
@@ -142,7 +123,7 @@ if run_btn and lv_file and cutsheet_files:
                             processed_by="HSG17_T1toT0_Gold"
                         )
             except Exception as log_exc:
-                st.warning(f"Central logging encountered an issue (non-fatal): {log_exc}")
+                pass
 
         finally:
             # Best effort cleanup of temps
@@ -153,8 +134,4 @@ if run_btn and lv_file and cutsheet_files:
             except Exception:
                 pass
 
-elif not (lv_file and cutsheet_files):
-    st.info("Upload the LV Portal export and at least one cutsheet / allconnections file, then click Generate.")
 
-st.markdown("---")
-st.caption("HSG17 • Gold T1-to-T0 formatter • Issues tracked by Placement Group (PG14 for rack 3110) per Bootstrap Sequence • Categories mapped for your untouched original Dashboard compatibility • All processing is local.")

@@ -69,7 +69,6 @@ hsg17_df = df[df['hall'] == "HSG17"].copy()
 
 if hsg17_df.empty:
     st.warning("No HSG17 data logged yet.")
-    st.info("Process files using the **HSG17 T0-to-Host** tool in this app to populate the dashboard with placement group data.")
     st.stop()
 
 # ====================== HELPER FUNCTIONS (current state + deltas) ======================
@@ -120,7 +119,7 @@ current_with_deltas = get_latest_with_deltas(hsg17_df)
 if DATA_FILE.exists():
     with open(DATA_FILE, "rb") as f:
         st.download_button(
-            "📥 Download live validation_error_log.xlsx",
+            "",
             data=f,
             file_name="HSG17_validation_error_log.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -259,7 +258,7 @@ if not current.empty:
                         )
                     st.markdown("</div>", unsafe_allow_html=True)
 else:
-    st.info("No HSG17 placement group data yet. Run the T0-to-Host tool to start logging issues.")
+    pass
 
 st.divider()
 
@@ -296,5 +295,3 @@ if not current.empty:
     fig = px.bar(cat_totals, x="Category", y="Errors", height=280)
     fig.update_layout(margin=dict(l=0, r=0, t=20, b=0))
     st.plotly_chart(fig, width="stretch", key="hsg17_cat_totals", config={"displayModeBar": False})
-
-st.caption("Data source: HSG17 validation_error_log.xlsx (inside this repo). Re-uploading the same placement groups overwrites previous counts — dashboard always shows current state.")

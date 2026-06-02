@@ -20,21 +20,13 @@ from utils.hsg17_models import derive_placement_group
 require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
-st.title("HSG17 T0-to-Host Validator (T1-to-T0 Gold)")
-st.caption("Exact gold logic • Tracks by Placement Group (per Bootstrap Sequence) • Feeds central Dashboard")
+st.title("HSG17 T0-to-Host Validaton Formatter")
+st.caption("")
 
 st.markdown("""
 **Inputs:**
-- **LV Portal Validation Export** (.xlsx): the export with sheets like Optic Errors, FEC_BER Errors, Interface Down Errors (and optional LLDP/mismatch).
-- **Master Cutsheet(s) / Allconnections**: your T1toT0 allc (or master cutsheet). The lookup supports the columns in QFABT1toT0_..._allconnections.xlsx (DeviceA/DeviceB combined host+port, RackA/RackB, Source_port, DMARC*, Destination_port, EasyMark+, Physical Ports etc.).
-
-Issues are tracked by **Placement Group** (see HSG17 Bootstrap Sequence for rack->PG mapping; e.g. rack 3110 = PG14).
-
-For your untouched original Dashboard compatibility the error categories are logged under the original names (LLDP Mismatch + Link Down etc.).
-
-Upload, generate, download the `_formatted.xlsx` with the 5 perfect tabs (Summary navy, Mispatches red, Downlinks orange, Optics brown, FEC Errors purple).
-All processing is local.
-""")
+- **LV Portal Validation Export** .
+- **Master Cutsheet(s) / Allconnections**: 
 
 with st.sidebar:
     st.header("Inputs")
@@ -45,12 +37,12 @@ with st.sidebar:
         help="The export containing the error sheets (Optic, FEC, Interface Down, ...)"
     )
     cutsheet_files = st.file_uploader(
-        "Master Cutsheet(s) / Allconnections (hold Ctrl or Cmd for multiple)",
+        "Cutsheet/Allconnections",
         type=["xlsx", "xlsm"],
         accept_multiple_files=True,
-        help="The T1toT0 allconnections or master cutsheet for enrichment."
+        help="."
     )
-    run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
+    run_btn = st.button("Generate Report", type="primary", disabled=not (lv_file and cutsheet_files))
 
 if run_btn and lv_file and cutsheet_files:
     with st.spinner("Formatting using the exact gold logic..."):
@@ -72,11 +64,11 @@ if run_btn and lv_file and cutsheet_files:
             # Read result for download
             out_bytes = out_path.read_bytes()
 
-            st.success("✅ Report generated with the exact reference logic.")
+            st.success("Report generated with the exact reference logic.")
             st.write("**Counts:**", counts)
 
             st.download_button(
-                label=f"📥 Download {out_path.name}",
+                label=f"Download {out_path.name}",
                 data=out_bytes,
                 file_name=out_path.name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -157,4 +149,4 @@ elif not (lv_file and cutsheet_files):
     st.info("Upload the LV Portal export and at least one cutsheet / allconnections file, then click Generate.")
 
 st.markdown("---")
-st.caption("HSG17 • Gold T1-to-T0 formatter • Issues tracked by Placement Group (PG14 for rack 3110) per Bootstrap Sequence • Categories mapped for your untouched original Dashboard compatibility • All processing is local.")
+st.caption("HSG17")

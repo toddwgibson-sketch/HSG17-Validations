@@ -4,12 +4,9 @@ import streamlit as st
 import tempfile
 from pathlib import Path
 
-from utils.auth import require_login
 from utils.data_logger import log_errors
 from utils.t1_to_t0_formatter import format_report
 from utils.hsg17_models import derive_placement_group
-
-require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
 st.title("HSG17 T1-to-T0 Validaton Formatter")

@@ -6,10 +6,6 @@ import plotly.express as px
 from pathlib import Path
 from datetime import datetime
 
-from utils.auth import require_login
-
-require_login()
-
 st.set_page_config(
     page_title="HSG17 Dashboard",
     page_icon="📊",

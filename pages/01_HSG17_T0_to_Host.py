@@ -12,7 +12,7 @@ from utils.hsg17_models import derive_placement_group
 require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
-st.title("HSG17 T0-to-Host Validaton Formatter")
+st.title("HSG17 T1-to-T0 Validaton Formatter")
 st.caption("")
 
 st.markdown("""

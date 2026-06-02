@@ -45,7 +45,7 @@ with st.sidebar:
     run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
 
 if run_btn and lv_file and cutsheet_files:
-    with st.spinner("Formatting using the exact gold logic..."):
+    with st.spinner("Working..."):
         tmpdir = Path(tempfile.mkdtemp(prefix="hsg17_t1t0_"))
         try:
             # Write uploads to temp files (the formatter expects real paths + load_workbook)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HSG17 T0-to-Host Validator — Clean build from scratch.
+HSG17 T0-to-Host Validator — 
 
 Full pipeline:
 - Two required/strongly recommended uploads (allconnections + pre-classified cutsheet)
@@ -8,7 +8,6 @@ Full pipeline:
 - Professional 5-tab output (Summary + the 4 error categories the user already uses)
 - Prominent "Block" (DH-xxx) column using the authoritative strategy from the Bootstrap Sequence
 - Silent central logging (per DH block) so the Dashboard shows current state + deltas
-- No extra buttons — logging happens automatically on successful Process
 """
 
 import streamlit as st

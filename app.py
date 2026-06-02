@@ -8,7 +8,7 @@ st.title("HSG17 Validation Tools")
 st.caption("")
 
 st.markdown("""
-Welcome to the HSG17 validation toolkit.
+HSG17 validation toolkit.
 
 **Available pages:**
 - **01_HSG17_T0_to_Host** — T1-to-T0 formatter ()

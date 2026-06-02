@@ -598,13 +598,31 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
                             df = df.drop(columns=[col], errors="ignore")
 
             # Fallback for PP_Enriched if the allconnections join gave nothing for the row
+            # Parse the label string from cutsheet's orig_col (which may be the big single string) and split into columns
             if "PP_Enriched" in df.columns:
                 empty_pp = df["PP_Enriched"].astype(str).str.len() == 0
                 if empty_pp.any():
                     for orig_col in ["Patch Panel Matrix", "Full Label", "EasyMark+ --- Patch Panels", "PP Matrix", "Patch Panel"]:
                         if orig_col in df.columns:
-                            fallback = df.loc[empty_pp, orig_col].apply(_safe_str)
-                            df.loc[empty_pp, "PP_Enriched"] = fallback
+                            fallbacks = df.loc[empty_pp, orig_col].apply(_safe_str)
+                            # For each, parse and set split columns, and clean PP_Enriched
+                            for idx in empty_pp[empty_pp].index:
+                                val = fallbacks.get(idx, "")
+                                parsed = parse_label_fields(val)
+                                if parsed.get('pp_label'):
+                                    df.loc[idx, "PP_Enriched"] = parsed['pp_label']
+                                elif val:
+                                    df.loc[idx, "PP_Enriched"] = val  # fallback to original if no parse
+                                if parsed.get('rack'):
+                                    df.loc[idx, "Rack"] = parsed['rack']
+                                if parsed.get('elev'):
+                                    df.loc[idx, "Elevation"] = parsed['elev']
+                                if parsed.get('rack2'):
+                                    df.loc[idx, "Z Rack"] = parsed['rack2']
+                                if parsed.get('elev2'):
+                                    df.loc[idx, "Z Elevation"] = parsed['elev2']
+                                if parsed.get('pp_label2'):
+                                    df.loc[idx, "Destination_port"] = parsed['pp_label2']
                             break
 
             # For Interface Down, add simple "full switch down" flag - this makes the report actually help prioritize (if one device has many downs, likely the whole switch/rack is affected)
@@ -791,6 +809,17 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
             if "Cluster" in df.columns:
                 sort_keys.append("Cluster")
             df = df.sort_values(by=sort_keys, kind="stable").reset_index(drop=True)
+
+        # Reorder columns to better match target formatting (everything in own column, key enriched info first like Source_port, Rack, etc., then Possible/Act/Exp from cutsheet)
+        preferred_order = [
+            'Source_port', 'Destination_port', 'Rack', 'Elevation', 'Z Rack', 'Z Elevation', 'Z Interface', 'Interface', 'History',
+            'Possible Source Port', 'Possible Rack / U', 'Possible Device A', 'Possible DMARC1', 'Possible DMARC2', 'Possible Dest Port', 'Possible T1 Rack / U', 'Possible T1 Port',
+            'Act. Interface', 'Act. Rack', 'Act. Elevation', 'Exp. Interface', 'Exp. Rack', 'Exp. Elevation',
+            'Block', 'Cluster', 'Cluster Size', 'Notes', 'PP_Enriched'
+        ]
+        existing = [c for c in preferred_order if c in df.columns]
+        other = [c for c in df.columns if c not in existing]
+        df = df[existing + other]
 
         ws = wb.create_sheet(sheet_name)
 

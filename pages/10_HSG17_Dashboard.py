@@ -110,7 +110,7 @@ current_with_deltas = get_latest_with_deltas(hsg17_df)
 if DATA_FILE.exists():
     with open(DATA_FILE, "rb") as f:
         st.download_button(
-            "",
+            "📥 Download live validation_error_log.xlsx",
             data=f,
             file_name="HSG17_validation_error_log.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

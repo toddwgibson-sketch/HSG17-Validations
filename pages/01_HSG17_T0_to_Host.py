@@ -28,7 +28,7 @@ with st.sidebar:
         accept_multiple_files=True,
         label_visibility="collapsed"
     )
-    run_btn = st.button("", type="primary", disabled=not (lv_file and cutsheet_files))
+    run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
 
 if run_btn and lv_file and cutsheet_files:
     with st.spinner(""):
@@ -51,7 +51,7 @@ if run_btn and lv_file and cutsheet_files:
             out_bytes = out_path.read_bytes()
 
             st.download_button(
-                label="",
+                label=f"📥 Download {out_path.name}",
                 data=out_bytes,
                 file_name=out_path.name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

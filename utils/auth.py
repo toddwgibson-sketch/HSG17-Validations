@@ -3,14 +3,14 @@ import streamlit as st
 def require_login():
     """
     Simple username/password gate.
-    Currently hardcoded to admin / admin.
+    Currently hardcoded to admin / admin (case-insensitive).
     """
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.title("🔐 Login Required")
-        st.markdown("HSG17 Validation Tools. Please log in.")
+        st.title("Login Required")
+        st.markdown("HSG17 Validation Tools. U:Admin P:Admin")
 
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Username")
@@ -18,7 +18,7 @@ def require_login():
             submitted = st.form_submit_button("Login")
 
             if submitted:
-                if username == "admin" and password == "admin":
+                if username.lower() == "admin" and password.lower() == "admin":
                     st.session_state.authenticated = True
                     st.rerun()
                 else:

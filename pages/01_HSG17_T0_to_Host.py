@@ -149,4 +149,4 @@ elif not (lv_file and cutsheet_files):
     st.info("Upload the LV Portal export and at least one cutsheet / allconnections file, then click Generate.")
 
 st.markdown("---")
-st.caption("HSG17 • Gold T1-to-T0 formatter • Issues tracked by Placement Group (PG14 for rack 3110) per Bootstrap Sequence • Categories mapped for your untouched original Dashboard compatibility • All processing is local.")
+st.caption("HSG17")

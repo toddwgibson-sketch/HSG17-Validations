@@ -17,15 +17,15 @@ st.caption("")
 
 st.markdown("""
 **Inputs:**
-- **LV Portal Validation Export** (.xlsx): the export with sheets like Optic Errors, FEC_BER Errors, Interface Down Errors (and optional LLDP/mismatch).
-- **Master Cutsheet(s) / Allconnections**: your T1toT0 allc (or master cutsheet). The lookup supports the columns in QFABT1toT0_..._allconnections.xlsx (DeviceA/DeviceB combined host+port, RackA/RackB, Source_port, DMARC*, Destination_port, EasyMark+, Physical Ports etc.).
+- **LV Portal Validation Export** - Upload your LVV Portal file using the sidebar on the left
 
-Issues are tracked by **Placement Group** (see HSG17 Bootstrap Sequence for rack->PG mapping; e.g. rack 3110 = PG14).
+.
+- **Master Cutsheet/Allconnect Report - Upload the corresponding cutsheet aswell
 
-For your untouched original Dashboard compatibility the error categories are logged under the original names (LLDP Mismatch + Link Down etc.).
+Hit Generate Formatted Report, once calculated it will be available for download by clicking the download report button
 
-Upload, generate, download the `_formatted.xlsx` with the 5 perfect tabs (Summary navy, Mispatches red, Downlinks orange, Optics brown, FEC Errors purple).
-All processing is local.
+Dashboard will update automatically
+
 """)
 
 with st.sidebar:

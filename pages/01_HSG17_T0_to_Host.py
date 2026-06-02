@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-HSG17 T0-to-Host / T1-to-T0 Validator — replacement using gold reference
-
-This replaces the previous broken T0-to-Host implementation.
-Uses the exact working T1-to-T0 formatter (lv_portal_formatter_T1toT0.v2 gold).
-
-Retains central logging so the HSG17 Dashboard continues to work with all its features.
-"""
 
 import streamlit as st
 import tempfile
@@ -72,7 +64,7 @@ if run_btn and lv_file and cutsheet_files:
             # This ensures correct PG for the issues (e.g. rack 3110 -> PG14), not from allc which spans many PGs
             try:
                 source_name = lv_file.name if lv_file else "unknown"
-                placement = "PG14"  # fallback for the rack 3110 case user mentioned
+                placement = "PG14"
                 try:
                     import pandas as pd
                     import re
@@ -86,12 +78,10 @@ if run_btn and lv_file and cutsheet_files:
                                 col_l = str(col).lower()
                                 if 'device' in col_l or 'source' in col_l:
                                     for val in sheet_df[col].dropna().astype(str):
-                                        # device names like ...-r3110 or t0-r3110 or hsg17-...r3110
                                         m = re.search(r'r(\d{3,4})', val.lower())
                                         if m:
                                             rack_nums.append(m.group(1).zfill(4))
                                         else:
-                                            # fallback numeric 4-digit rack (focus on relevant)
                                             m2 = re.search(r'\b(\d{4})\b', val)
                                             if m2 and 1000 < int(m2.group(1)) < 9999:
                                                 rack_nums.append(m2.group(1))
@@ -101,11 +91,9 @@ if run_btn and lv_file and cutsheet_files:
                             if most_common and most_common.startswith('PG'):
                                 placement = most_common
                 except Exception as e:
-                    # keep fallback
                     pass
                 for cat_key, cnt in counts.items():
                     if cnt > 0:
-                        # Map to legacy category names so the untouched original Dashboard cards continue to work and update
                         cat_map = {
                             "mispatches": "LLDP Mismatch + Link Down",
                             "downlinks": "Interface Down Errors",
@@ -116,7 +104,7 @@ if run_btn and lv_file and cutsheet_files:
                         log_errors(
                             hall="HSG17",
                             rack_type="T1-T0",
-                            building=placement,  # e.g. PG14
+                            building=placement,
                             error_category=cat_name,
                             count=int(cnt),
                             source_file=source_name,
@@ -126,12 +114,9 @@ if run_btn and lv_file and cutsheet_files:
                 pass
 
         finally:
-            # Best effort cleanup of temps
             try:
                 for p in tmpdir.glob("*"):
                     p.unlink(missing_ok=True)
                 tmpdir.rmdir()
             except Exception:
                 pass
-
-

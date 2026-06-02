@@ -1,5 +1,9 @@
 # HSG17 T0-to-Host — Clean Architecture Design
 
+**Note (June 2026)**: The active implementation in `pages/01_HSG17_T0_to_Host.py` now uses the gold T1-to-T0 formatter (from the provided lv_portal_formatter reference) with Placement Group tracking (instead of DH blocks) per the Bootstrap Sequence. This document describes the original design goals; the current code deviates toward the gold reference while preserving logging compatibility with the Dashboard.
+
+---
+
 **Status**: Draft — Ready for review
 **Date**: 2026-06-01
 **Repo**: Separate HSG17-Validations (clean build from scratch)

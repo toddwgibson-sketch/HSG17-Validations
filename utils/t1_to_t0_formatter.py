@@ -1,35 +1,29 @@
 """
-t1_to_t0_formatter.py  (jpbversion2)
+lv_portal_formatter.py
+─────────────────────────────────────────────────────────────────────────────
+Formats the NEW LV Portal validation export into the standard JBP15 report
+layout (matches DG19_25-05.xlsx / highlight_slack_report_v2.py output).
 
-Exact reference implementation (originally lv_portal_formatter_T1toT0.v2 (1).py).
+INPUT
+  - LV Portal export with sheets:
+      Summary
+      Optic Errors             (Source/Remote device+port, Rx Power, Patch Panel Matrix)
+      FEC_BER Errors           (Device, Remote, PRE_FEC_BER, Optical RawBer, Lock Status, Issue, Matrix)
+      Interface Down Errors    (Source location, Source/Remote device+port, Issue, Matrix)
+  - Master cutsheet (JBP15_mastercutsheet.xlsx style):
+      Cols: PhysA | DeviceA | RackA | Source_port | DMARC1 | DMARC2 |
+            Destination_port | DeviceB | RackB | EasyMark+ | PhysB | Cable Color
+      DeviceA is "<hostname> <interface>" (single space separated)
 
-This is the gold that "works perfectly" for T1toT0 validation report formatting.
+OUTPUT — five tabs matching DG19 format:
+  Summary       (navy)    — total counts + per-rack breakdown
+  Mispatches    (red)     — empty stub (new LV format has no LLDP sheet)
+  Downlinks     (orange)  — 13 cols
+  Optics        (brown)   — 16 cols (one row per failed channel)
+  FEC Errors    (purple)  — 17 cols
 
-It takes:
-  - LV Portal validation export (sheets: Optic Errors, FEC_BER Errors, Interface Down Errors,
-    optional LLDP/mismatch)
-  - Master cutsheet(s) / allconnections (supports the columns in your QFABT1toT0 allc:
-    DeviceA (combined "host iface"), RackA, Source_port, DMARC1/2, Destination_port,
-    DeviceB, RackB, EasyMark+, Physical Port cols, etc.)
-
-Produces exactly the 5-tab report:
-  Summary (navy), Mispatches (red), Downlinks (orange), Optics (brown), FEC Errors (purple)
-
-With all the details: precise column orders per tab, tab colors, thick pair borders for
-physical cables (s1/s2 etc.), "Also Downlink" grey rows, cutsheet-miss yellow, union-find
-swap clustering + thick group borders in Mispatches, L&R calculation, logical-pair and
-reverse-lookup fallbacks, Patch Panel Matrix parsing, per-channel Rx Power and RawBer
-parsing, BER severity classification, clean strings, freeze_panes, tuned widths, etc.
-
-See format_report() for the reusable API (used by the Streamlit UI).
-Standalone CLI behavior is unchanged.
-
-Run (standalone):
-    python utils/t1_to_t0_formatter.py
-
-From code / UI:
-    from utils.t1_to_t0_formatter import format_report
-    out_path, counts = format_report(lv_xlsx, [cutsheet_or_allc, ...], interactive=False)
+Run:
+    python lv_portal_formatter.py
 """
 
 from __future__ import annotations
@@ -44,8 +38,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-# No GUI / tkinter / persistence in this version.
-# All interactive use is via simple stdin prompts (for CLI) or direct function calls (for Streamlit).
+# No GUI / tkinter / persistence in this version (Streamlit-friendly).
+# All interactive use is via simple stdin prompts (for CLI) or direct function calls (for Streamlit UI in the HSG17 page).
 
 
 # ── Style constants (match DG19 / highlight_slack_report_v2.py) ───────────────
@@ -167,7 +161,7 @@ def draw_pair_borders(ws, iface_col: int = 1, rack_col: int = 3, u_col: int = 4)
         dr = grp_end + 1
 
 
-# ── Pure CLI pickers (no tkinter, no GUI) ─────────────────────────────────────
+# ── Pure CLI pickers (no tkinter) ─────────────────────────────────────────────
 def pick_file(title: str) -> str | None:
     p = input(f"{title}\nPath: ").strip().strip('"').strip("'")
     return p or None
@@ -198,14 +192,17 @@ def parse_rack_u(s: str) -> tuple[str, str]:
 
 def iface_to_lr(iface: str) -> str:
     """
-    `swp14s3` → '14L' or '14R'. The L/R side depends on BOTH the port number
-    (even/odd) AND the sub-lane (s0-s3), per the standard JBP15 cutsheet:
+    `swp14s3` → '14L' or '14R'.
 
-        Even port + s0/s1 → L      Odd port + s0/s1 → R
-        Even port + s2/s3 → R      Odd port + s2/s3 → L
+    Ports are grouped in pairs-of-pairs: within each group of 4 consecutive
+    ports the first two are L-side (s0) and the last two are R-side (s0).
+    Odd sub-lanes (s1, s3) always flip the side relative to s0/s2.
 
-    This is a fallback only — cutsheet PhysA values are always preferred when
-    available.
+        base_side = "L" if ((port - 1) // 2) % 2 == 0 else "R"
+        side      = flipped(base_side) if lane is odd (s1/s3), else base_side
+
+    This is a fallback only — cutsheet PhysA/PhysB values are always preferred
+    when available.
     """
     if not iface:
         return ""
@@ -214,11 +211,8 @@ def iface_to_lr(iface: str) -> str:
         return ""
     port = int(m.group(1))
     lane = int(m.group(2))
-    even_port = (port % 2 == 0)
-    low_lane  = (lane <= 1)
-    # Truth table: (even_port, low_lane) → side
-    #   (T, T) L  | (T, F) R | (F, T) R | (F, F) L
-    side = "L" if even_port == low_lane else "R"
+    base_side = "L" if ((port - 1) // 2) % 2 == 0 else "R"
+    side = ("R" if base_side == "L" else "L") if lane % 2 == 1 else base_side
     return f"{port}{side}"
 
 
@@ -1338,18 +1332,11 @@ def build_summary(wb_out, report_name: str, n_miss: int, n_down: int,
     set_widths(ws, [3, 24, 12, 12])
 
 
-# ── Reusable API (for Streamlit / jpbversion2 UI) ─────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 def format_report(lv_export_path: str | Path, cutsheet_paths: list[str | Path], interactive: bool = True) -> tuple[Path, dict]:
-    """Exact analysis + report generation from the gold lv_portal_formatter_T1toT0.v2.
-
-    This is the reference implementation that "works perfectly".
-    All column orders, tab colors, pair borders (draw_pair_borders), DL grey rows,
-    cutsheet-miss yellow, swap-group thick black borders (Mispatches), L&R logic,
-    matrix/pair/cutsheet fallbacks, channel splitting, BER classification,
-    everything — preserved 100%.
-
-    Callers (Streamlit, tests, CLI) use this; the original interactive main()
-    is kept unchanged in behavior.
+    """Reusable core for Streamlit (HSG17 page) and CLI.
+    Same behavior as the original main processing, extracted for direct calls.
+    Returns (out_path, counts_dict).
     """
     lv_export_path = Path(lv_export_path)
     cutsheet_paths = [str(p) for p in cutsheet_paths]
@@ -1405,11 +1392,10 @@ def format_report(lv_export_path: str | Path, cutsheet_paths: list[str | Path], 
     return out_path, counts
 
 
-# ── Main (simple CLI entrypoint — no tkinter/GUI, pure stdlib) ───────────────
 def main() -> None:
     print("=" * 60)
-    print("  T1toT0 Validation Formatter (jpbversion2)")
-    print("  (exact gold logic)")
+    print("  T1toT0 Validation Formatter (Updated)")
+    print("  (exact gold logic - Streamlit friendly)")
     print("=" * 60)
 
     print("\nStep 1: Cutsheet(s) / Allconnections")
@@ -1429,7 +1415,6 @@ def main() -> None:
         show_msg("Cancelled", "No file selected.", error=True)
         sys.exit(0)
 
-    # format_report does the rest (lookup, build tabs, save, prints)
     format_report(report_path, cutsheet_paths)
 
 

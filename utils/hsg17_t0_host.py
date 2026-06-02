@@ -1,15 +1,16 @@
 """
-HSG17 T0-to-Host clean processor (6-stage architecture).
+HSG17 T0-to-Host / T1-to-T0 clean processor (6-stage architecture).
 
 Stages (as designed):
 1. Ingest
 2. Normalize (block derivation is here)
-3. Enrich (PP join + extra columns)
+3. Enrich (attach ALL columns from matched allconnections row as AllConn_* + parsing for clean fields)
 4. Analyze (light clustering / grouping for rich output)
-5. Format (professional 5-tab workbook + Summary)
+5. Format (professional 5-tab workbook + Summary, with columns in target order + AllConn_ at end)
 6. Log (extract counts per DH block → central logger)
 
 This module is intentionally self-contained and testable.
+All columns from the (new simpler) allconnections will be in the output as requested.
 """
 
 from __future__ import annotations
@@ -466,24 +467,29 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
             for _, r in allc.iterrows():
                 key = (_safe_str(r.get(dev_a_col)), _safe_str(r.get(port_a_col)))
                 if key[0] or key[1]:  # avoid empty keys
-                    pp_lookup[key] = _get_conn_info(r, dev_a_col, port_a_col)
+                    # Store ALL columns from this allconnections row, as user wants all in output
+                    all_info = {c: _safe_str(r.get(c)) for c in allc.columns}
+                    pp_lookup[key] = all_info
 
         if dev_b_col and port_b_col:
             for _, r in allc.iterrows():
                 key = (_safe_str(r.get(dev_b_col)), _safe_str(r.get(port_b_col)))
                 if key[0] or key[1]:
                     existing = pp_lookup.get(key, {})
-                    new_info = _get_conn_info(r, dev_b_col, port_b_col)
-                    # Always merge to keep all device info fields from allc (Source_port etc)
+                    new_info = {c: _safe_str(r.get(c)) for c in allc.columns}
+                    # Merge to keep all
                     merged = {**existing, **new_info}
                     pp_lookup[key] = merged
 
     # Build device-name-only lookup for fallback matching when exact port doesn't match in allc (e.g. different swp port for the T0 in error vs allc host connections)
+    # Normalize dev name to first token (before space) to handle 'name port' vs 'name' in cuts vs allc
     dev_lookup = {}
     for key, inf in list(pp_lookup.items()):
         dev = key[0]
-        if dev and dev not in dev_lookup:
-            dev_lookup[dev] = inf
+        if dev:
+            norm_dev = dev.split()[0] if ' ' in dev else dev
+            if norm_dev not in dev_lookup:
+                dev_lookup[norm_dev] = inf
 
     for name, df in normalized.items():
         if name in ("allconnections", "Summary"):
@@ -521,76 +527,42 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
                     if not info:
                         # Fallback to device name only (when exact port doesn't match in allc, e.g. swp3s0 in error vs swp1s0 in allc for same t0 device)
                         dev = _safe_str(r.get(dev_b_col)) if dev_b_col else _safe_str(r.get(dev_a_col))
-                        if dev in dev_lookup:
-                            info = dev_lookup[dev]
+                        norm_dev = dev.split()[0] if ' ' in dev else dev
+                        if norm_dev in dev_lookup:
+                            info = dev_lookup[norm_dev]
 
                     # Attach the device/connection info from the matched allconnections row.
                     # This is the absolute minimum the user asked for: pull real device details / path from the big connections file
                     # to give context on what the error row "should" be connected to.
                     enriched = {}
                     if info:
-                        # Pull key fields from allconnections to enrich the report with device/rack/elev/port/PP info
-                        # Use names that match what user wants in the sheets (Source_port, Rack, etc.)
-                        # Parse the single string fields (Full Label/EasyMark) so they are split, not one big string in the report.
-                        pp = info.get("PP", "") or info.get("Full Label", "") or info.get("EasyMark+ --- Patch Panels", "")
-                        # Prefer the clean PP label from the parsed Full Label (e.g. PP.HSG17:...) as Source_port to match the useful example format
-                        src_port = info.get("pp_label") or info.get("Source_port") or pp
-                        dest_port = info.get("pp_label2") or info.get("Destination_port") or pp
-                        enriched["Source_port"] = str(src_port) if src_port else ""
-                        enriched["Destination_port"] = str(dest_port) if dest_port else ""
-
-                        # Rack / Elevation – prefer parsed from label, fallback to column values
-                        rack = info.get("rack") or info.get("DeviceA Rack") or info.get("DeviceB Rack") or info.get("RackA") or info.get("RackB") or ""
-                        elev = info.get("elev") or info.get("DeviceA RU") or info.get("DeviceB RU") or info.get("Elevation_A") or info.get("Elevation_B") or ""
-                        if rack:
-                            enriched["Rack"] = str(rack)
-                        if elev:
-                            enriched["Elevation"] = str(elev)
-
-                        # Second path as Z if present
-                        if info.get("rack2"):
-                            enriched["Z Rack"] = str(info["rack2"])
-                        if info.get("elev2"):
-                            enriched["Z Elevation"] = str(info["elev2"])
-
-                        # DMARC only if present (user noted may be none for HSG17)
-                        if info.get("DMARC1"):
-                            enriched["DMARC1"] = str(info["DMARC1"])
-                        if info.get("DMARC2"):
-                            enriched["DMARC2"] = str(info["DMARC2"])
-
-                        # Z / T1 / Interface / History / T0 / Cable from allc if present
-                        for k in ["Z_Interface", "T1_Rack", "T1_Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"]:
-                            if info.get(k):
-                                nice = k.replace(" ", "_").replace("/", "_")
-                                if "T1" in nice:
-                                    enriched["Possible " + nice.replace("_", " / ")] = str(info[k])
-                                else:
-                                    enriched[nice] = str(info[k])
-
-                        # Always add AllConn_ for the raw single-string fields too (for reference) + other device info
+                        # Attach ALL columns from the matched allconnections row, prefixed with AllConn_ 
+                        # so they appear in the output report as user requested "all the columns in the output"
                         for k, v in info.items():
-                            if v:
-                                nice_k = f"AllConn_{k.replace(' ', '_').replace('/', '_')}"
-                                if nice_k not in enriched:
-                                    enriched[nice_k] = str(v)
+                            nice_k = f"AllConn_{k.replace(' ', '_').replace('+', 'Plus').replace('/', '_')}"
+                            enriched[nice_k] = str(v) if v else ""  # include even empty, so column exists; drop later only if all empty in sheet
 
-                        # Set PP_Enriched to the clean label (not the full big string), to avoid single string with everything
-                        pp_label_clean = info.get("pp_label") or info.get("Source_port") or src_port
+                        # For backward compat / key fields, also set some top-level like before if wanted, but since all via AllConn, ok
+                        # But keep PP_Enriched as clean if possible
+                        pp_label_clean = info.get("Source_port") or info.get("EasyMark+") or ""
+                        if pp_label_clean:
+                            # take first PP if multi
+                            import re
+                            pps = re.findall(r'PP\.HSG17[:.][^\s\n|]+', pp_label_clean, re.IGNORECASE)
+                            if pps:
+                                pp_label_clean = pps[0]
                         enriched["PP_Enriched"] = str(pp_label_clean) if pp_label_clean else ""
                     else:
                         enriched["PP_Enriched"] = ""
-                        enriched["Source_port"] = ""
-                        enriched["Destination_port"] = ""
                     return pd.Series(enriched)
 
                 extra = df.apply(_enrich_row, axis=1)
                 for col in extra.columns:
                     df[col] = extra[col]
 
-                # Drop any optional enrichment columns that are completely empty for this sheet
-                # (e.g. no DMARCs for these HSG17 connects, as user noted)
-                cols_to_check = [c for c in list(df.columns) if c.startswith("AllConn_") or c in ["DMARC1", "DMARC2", "Z Interface", "Z Rack", "Z Elevation", "Possible T1 Rack / U", "T1 Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color", "Source_port", "Destination_port", "Rack", "Elevation"] or any(x in c for x in ["Z_", "T1_"])]
+                # Do not drop AllConn_* as user wants all columns from the new allconnections in output.
+                # Only drop other optionals if completely empty.
+                cols_to_check = [c for c in list(df.columns) if not c.startswith("AllConn_") and c in ["DMARC1", "DMARC2", "Z Interface", "Z Rack", "Z Elevation", "Possible T1 Rack / U", "T1 Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color", "Source_port", "Destination_port", "Rack", "Elevation"] or any(x in c for x in ["Z ", "T1 "])]
                 for col in cols_to_check:
                     if col in df.columns:
                         non_empty = df[col].fillna("").astype(str).str.strip().ne("")
@@ -631,18 +603,19 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
                 df["A Device Down Count"] = df["Device A Name"].map(dev_counts)
                 df["Full Switch Down?"] = df["A Device Down Count"].apply(lambda c: "LIKELY - inspect entire device/switch" if c >= 3 else "")
 
-        # Promote Block (and Cluster if present) to front, plus the new AllConn device info from allconnections
-        # so the report actually gives you more information from the big connections file.
-        front = ["Block"]
-        if "Cluster" in df.columns:
-            front.append("Cluster")
-        core_enriched = ["Source_port", "Destination_port", "Rack", "Elevation", "DMARC1", "DMARC2", "Z_Interface", "Z_Rack", "Z_Elevation", "Possible T1 Rack / U", "T1_Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"]
-        for extra in ["Cluster Size", "Notes", "PP_Enriched"] + core_enriched + ["AllConn_Mate", "AllConn_T0", "AllConn_Path", "AllConn_Rack", "AllConn_Cable_Type"]:
+        # Promote to prioritize target columns (from user's CSV), then our additions including all AllConn_ from the new allconnections
+        target_order = [
+            'Interface', 'L&R', 'Rack', 'Elevation', 'Source_port', 'Destination_port', 'Z Interface', 'L&R.1', 'Z Rack', 'Z Elevation',
+            'Possible Device A', 'Possible Rack / U', 'Possible Source Port', 'Possible DMARC1', 'Possible DMARC2', 'Possible Dest Port',
+            'Possible T1 Rack / U', 'Possible T1 Port', 'Act. Interface', 'Act. Rack', 'Act. Elevation', 'Exp. Interface', 'Exp. Rack', 'Exp. Elevation', 'History'
+        ]
+        front = [c for c in target_order if c in df.columns]
+        for extra in ["Block", "Cluster", "Cluster Size", "Notes", "PP_Enriched"]:
             if extra in df.columns and extra not in front:
                 front.append(extra)
-        # Any other AllConn_* or useful pulled from allconnections (device info etc) – this will catch parsed fields like Z_Elevation too if named that way
+        # Add ALL AllConn_ columns (from the new allconnections file)
         for c in list(df.columns):
-            if (c.startswith("AllConn_") or c in core_enriched or any(x in c for x in ["Z_", "T1_", "Source_port", "Destination_port", "Rack", "Elevation", "DMARC", "Interface", "History"])) and c not in front:
+            if c.startswith("AllConn_") and c not in front:
                 front.append(c)
         other = [c for c in df.columns if c not in front]
         df = df[front + other]
@@ -781,18 +754,19 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
                 return s
             df["PP_Enriched"] = df["PP_Enriched"].apply(_clean_pp)
 
-        # Reorder: Block, Cluster (if present), Cluster Size, Notes, PP_Enriched, then rest
-        # Put actionable columns (Notes, Cluster Size) early so the report provides value at a glance
-        front = ["Block"]
-        if "Cluster" in df.columns:
-            front.append("Cluster")
-        core_enriched = ["Source_port", "Destination_port", "Rack", "Elevation", "DMARC1", "DMARC2", "Z_Interface", "Z_Rack", "Z_Elevation", "Possible T1 Rack / U", "T1_Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"]
-        for extra in ["Cluster Size", "Notes", "PP_Enriched"] + core_enriched + ["AllConn_Mate", "AllConn_T0", "AllConn_Path", "AllConn_Rack", "AllConn_Cable_Type", "Full Switch Down?", "A Device Down Count"]:
+        # Reorder to prioritize target columns (from user's CSV), then our additions including all AllConn_ from the new allconnections
+        target_order = [
+            'Interface', 'L&R', 'Rack', 'Elevation', 'Source_port', 'Destination_port', 'Z Interface', 'L&R.1', 'Z Rack', 'Z Elevation',
+            'Possible Device A', 'Possible Rack / U', 'Possible Source Port', 'Possible DMARC1', 'Possible DMARC2', 'Possible Dest Port',
+            'Possible T1 Rack / U', 'Possible T1 Port', 'Act. Interface', 'Act. Rack', 'Act. Elevation', 'Exp. Interface', 'Exp. Rack', 'Exp. Elevation', 'History'
+        ]
+        front = [c for c in target_order if c in df.columns]
+        for extra in ["Block", "Cluster", "Cluster Size", "Notes", "PP_Enriched"]:
             if extra in df.columns and extra not in front:
                 front.append(extra)
-        # Any other AllConn_* or useful pulled from allconnections (device info etc) – this will catch parsed fields like Z_Elevation too if named that way
+        # Add ALL AllConn_ columns (from the new allconnections file)
         for c in list(df.columns):
-            if (c.startswith("AllConn_") or c in core_enriched or any(x in c for x in ["Z_", "T1_", "Source_port", "Destination_port", "Rack", "Elevation", "DMARC", "Interface", "History"])) and c not in front:
+            if c.startswith("AllConn_") and c not in front:
                 front.append(c)
         other = [c for c in df.columns if c not in front]
         df = df[front + other]
@@ -810,16 +784,17 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
                 sort_keys.append("Cluster")
             df = df.sort_values(by=sort_keys, kind="stable").reset_index(drop=True)
 
-        # Reorder columns to better match target formatting (everything in own column, key enriched info first like Source_port, Rack, etc., then Possible/Act/Exp from cutsheet)
-        preferred_order = [
-            'Source_port', 'Destination_port', 'Rack', 'Elevation', 'Z Rack', 'Z Elevation', 'Z Interface', 'Interface', 'History',
-            'Possible Source Port', 'Possible Rack / U', 'Possible Device A', 'Possible DMARC1', 'Possible DMARC2', 'Possible Dest Port', 'Possible T1 Rack / U', 'Possible T1 Port',
-            'Act. Interface', 'Act. Rack', 'Act. Elevation', 'Exp. Interface', 'Exp. Rack', 'Exp. Elevation',
-            'Block', 'Cluster', 'Cluster Size', 'Notes', 'PP_Enriched'
+        # Reorder: target matched cols first, then remaining cuts cols, then key added, then ALL AllConn_ at end
+        target_order = [
+            'Interface', 'L&R', 'Rack', 'Elevation', 'Source_port', 'Destination_port', 'Z Interface', 'L&R.1', 'Z Rack', 'Z Elevation',
+            'Possible Device A', 'Possible Rack / U', 'Possible Source Port', 'Possible DMARC1', 'Possible DMARC2', 'Possible Dest Port',
+            'Possible T1 Rack / U', 'Possible T1 Port', 'Act. Interface', 'Act. Rack', 'Act. Elevation', 'Exp. Interface', 'Exp. Rack', 'Exp. Elevation', 'History'
         ]
-        existing = [c for c in preferred_order if c in df.columns]
-        other = [c for c in df.columns if c not in existing]
-        df = df[existing + other]
+        existing_target = [c for c in target_order if c in df.columns]
+        cuts_remaining = [c for c in df.columns if not c.startswith('AllConn_') and c not in existing_target and c not in ['Block','Cluster','Cluster Size','Notes','PP_Enriched']]
+        key_added = [c for c in ['Block','Cluster','Cluster Size','Notes','PP_Enriched'] if c in df.columns]
+        allconn_cols = [c for c in df.columns if c.startswith('AllConn_')]
+        df = df[existing_target + cuts_remaining + key_added + allconn_cols]
 
         ws = wb.create_sheet(sheet_name)
 
@@ -858,7 +833,7 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
                     except Exception:
                         pass
                 # Force str for the enriched info columns the user wants (to avoid 1009.0 etc in Excel for rack/elev values)
-                if col_name in ["Rack", "Elevation", "DMARC1", "DMARC2", "Z Rack", "Z Elevation", "T1 Rack", "Possible T1 Rack / U", "Possible T1 Port", "Z_Interface", "T1_Rack", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"] or col_name.startswith("AllConn_") or col_name in ["Source_port", "Destination_port"] or any(x in col_name for x in ["Z_", "T1_"]):
+                if col_name in ["Rack", "Elevation", "DMARC1", "DMARC2", "Z Rack", "Z Elevation", "T1 Rack", "Possible T1 Rack / U", "Possible T1 Port", "Z Interface", "T1 Rack", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"] or col_name.startswith("AllConn_") or col_name in ["Source_port", "Destination_port"] or any(x in col_name for x in ["Z ", "T1 "]):
                     val = str(val) if val is not None else ""
                 cell = ws.cell(row=r_idx, column=c_idx, value=val)
                 cell.font = BODY_FONT

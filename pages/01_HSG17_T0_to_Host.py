@@ -1,166 +1,123 @@
 #!/usr/bin/env python3
 """
-HSG17 T0-to-Host Validator — 
+HSG17 T0-to-Host / T1-to-T0 Validator — replacement using gold reference
 
-Full pipeline:
-- Two required/strongly recommended uploads (allconnections + pre-classified cutsheet)
-- 6-stage clean processor (Ingest → Normalize with DH block derivation → Enrich → Analyze → Format → Log)
-- Professional 5-tab output (Summary + the 4 error categories the user already uses)
-- Prominent "Block" (DH-xxx) column using the authoritative strategy from the Bootstrap Sequence
-- Silent central logging (per DH block) so the Dashboard shows current state + deltas
+This replaces the previous broken T0-to-Host implementation.
+Uses the exact working T1-to-T0 formatter (lv_portal_formatter_T1toT0.v2 gold).
+
+Retains central logging so the HSG17 Dashboard continues to work with all its features.
 """
 
 import streamlit as st
-import pandas as pd
-from openpyxl import load_workbook
-from io import BytesIO
+import tempfile
 from pathlib import Path
-import re
 
 from utils.auth import require_login
 from utils.data_logger import log_errors
-from utils.hsg17_t0_host import process_hsg17_t0_host, extract_counts_for_logging
+from utils.t1_to_t0_formatter import format_report
 
 require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
-st.title("HSG17 T0-to-Host Validator")
-st.caption("Clean implementation • DH block derivation from authoritative Bootstrap Sequence • Feeds central Dashboard")
+st.title("HSG17 T0-to-Host Validator (T1-to-T0 Gold)")
+st.caption("Exact gold logic • T1-to-T0 allconnections support • Feeds central Dashboard")
 
 st.markdown("""
-**Inputs (from Batam folder):**
-- `QFABT0toHOST_allconnections.xlsx` — the big raw connections file (PP labels + device/rack info) — **required for PP enrichment + block derivation**
-- `rack_validation_merged_....xlsx` — the pre-classified cutsheet with the 4 error category sheets — **required**
+**Inputs:**
+- **LV Portal Validation Export** (.xlsx): the export with sheets like Optic Errors, FEC_BER Errors, Interface Down Errors (and optional LLDP/mismatch).
+- **Master Cutsheet(s) / Allconnections**: your T1toT0 allc (or master cutsheet). The lookup supports the columns in QFABT1toT0_..._allconnections.xlsx (DeviceA/DeviceB combined host+port, RackA/RackB, Source_port, DMARC*, Destination_port, EasyMark+, Physical Ports etc.).
+
+Upload, generate, download the `_formatted.xlsx` with the 5 perfect tabs (Summary navy, Mispatches red, Downlinks orange, Optics brown, FEC Errors purple).
+All processing is local.
 """)
 
-# ================== Uploaders ==================
-st.markdown("### Input Files")
-col1, col2 = st.columns(2)
-
-with col1:
-    allconn_file = st.file_uploader(
-        "T0-to-Host All Connections (required)",
+with st.sidebar:
+    st.header("Inputs")
+    lv_file = st.file_uploader(
+        "LV Portal Validation Export (.xlsx)",
         type=["xlsx", "xlsm"],
-        key="hsg17_allconn",
-        help="QFABT0toHOST_allconnections.xlsx — used for PP enrichment and block derivation"
+        accept_multiple_files=False,
+        help="The export containing the error sheets (Optic, FEC, Interface Down, ...)"
     )
-
-with col2:
-    cutsheet_file = st.file_uploader(
-        "Pre-classified Cutsheet (required)",
+    cutsheet_files = st.file_uploader(
+        "Master Cutsheet(s) / Allconnections (hold Ctrl or Cmd for multiple)",
         type=["xlsx", "xlsm"],
-        key="hsg17_cutsheet",
-        help="rack_validation_merged_....xlsx — contains the 4 error category sheets (LLDP/Optic/FEC_BER/Interface)"
+        accept_multiple_files=True,
+        help="The T1toT0 allconnections or master cutsheet for enrichment."
     )
+    run_btn = st.button("🚀 Generate Formatted Report", type="primary", disabled=not (lv_file and cutsheet_files))
 
-can_process = bool(allconn_file) and bool(cutsheet_file)
-
-# ================== Process Button ==================
-if st.button("🚀 Process Files", type="primary", disabled=not can_process, key="hsg17_process"):
-    with st.spinner("Running clean HSG17 T0-to-Host pipeline (block derivation, enrichment, formatting)..."):
+if run_btn and lv_file and cutsheet_files:
+    with st.spinner("Formatting using the exact gold logic..."):
+        tmpdir = Path(tempfile.mkdtemp(prefix="hsg17_t1t0_"))
         try:
-            all_bytes = allconn_file.getvalue()
-            cuts_bytes = cutsheet_file.getvalue() if cutsheet_file else b""
+            # Write uploads to temp files (the formatter expects real paths + load_workbook)
+            lv_tmp = tmpdir / lv_file.name
+            lv_tmp.write_bytes(lv_file.getvalue())
 
-            result_bytes, filename = process_hsg17_t0_host(
-                all_bytes,
-                cuts_bytes,
-                source_filename=allconn_file.name if allconn_file else "HSG17"
+            cuts_tmp_paths = []
+            for f in cutsheet_files:
+                p = tmpdir / f.name
+                p.write_bytes(f.getvalue())
+                cuts_tmp_paths.append(str(p))
+
+            # Call the exact gold implementation (interactive=False to skip any GUI)
+            out_path, counts = format_report(str(lv_tmp), cuts_tmp_paths, interactive=False)
+
+            # Read result for download
+            out_bytes = out_path.read_bytes()
+
+            st.success("✅ Report generated with the exact reference logic.")
+            st.write("**Counts:**", counts)
+
+            st.download_button(
+                label=f"📥 Download {out_path.name}",
+                data=out_bytes,
+                file_name=out_path.name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
             )
 
-            if result_bytes:
-                st.success("✅ Processing complete! (Block derivation + clustering + full device/rack/elevation/PP/DMARC/Z/T1/History enrichment from allconnections + the pre-classified cutsheet columns)")
+            st.info("The output has the 5 tabs, exact column orders, pair borders, styling, and enrichment from the gold formatter.")
 
-                # ====================== PRE-DOWNLOAD PREVIEW (matches the QFAB_V2 pattern the user likes) ======================
-                st.subheader("📊 Pre-Download Analysis")
+            # ====================== SILENT CENTRAL LOGGING (to retain Dashboard features) ======================
+            # Log the counts so the HSG17 Dashboard shows current state + deltas.
+            # Using placeholder building since this flow uses racks from allc rather than DH blocks.
+            try:
+                source_name = lv_file.name if lv_file else "unknown"
+                for cat_key, cnt in counts.items():
+                    if cnt > 0:
+                        # Map keys to nice category names
+                        cat_map = {
+                            "mispatches": "Mispatches",
+                            "downlinks": "Downlinks",
+                            "optics": "Optics",
+                            "fec": "FEC Errors"
+                        }
+                        cat_name = cat_map.get(cat_key, cat_key.title())
+                        log_errors(
+                            hall="HSG17",
+                            rack_type="T1-T0",
+                            building="T1toT0",  # placeholder; Dashboard will group under this
+                            error_category=cat_name,
+                            count=int(cnt),
+                            source_file=source_name,
+                            processed_by="HSG17_T1toT0_Gold"
+                        )
+            except Exception as log_exc:
+                st.warning(f"Central logging encountered an issue (non-fatal): {log_exc}")
 
-                wb_preview = load_workbook(BytesIO(result_bytes))
+        finally:
+            # Best effort cleanup of temps
+            try:
+                for p in tmpdir.glob("*"):
+                    p.unlink(missing_ok=True)
+                tmpdir.rmdir()
+            except Exception:
+                pass
 
-                # Summary tab as table (very useful for the user)
-                if "Summary" in wb_preview.sheetnames:
-                    st.markdown("**Summary (by Block)**")
-                    ws_sum = wb_preview["Summary"]
-                    summary_data = []
-                    for row in ws_sum.iter_rows(min_row=3, values_only=True):
-                        if row and row[0]:
-                            summary_data.append([str(c) if c is not None else "" for c in row])
-                    if summary_data:
-                        st.table(summary_data[:25])  # cap for UI sanity on first runs
-
-                # Quick metrics per tab
-                st.markdown("**Tab Row Counts**")
-                tab_counts = {}
-                for sheet_name in wb_preview.sheetnames:
-                    if sheet_name != "Summary":
-                        tab_counts[sheet_name] = max(0, wb_preview[sheet_name].max_row - 3)
-
-                if tab_counts:
-                    cols = st.columns(len(tab_counts))
-                    for i, (tab, count) in enumerate(tab_counts.items()):
-                        with cols[i]:
-                            st.metric(tab.replace(" Errors", ""), count)
-
-                # Show if enrichment actually added value (so user can see why the report changed or not)
-                if "LLDP Mismatch + Link Down" in wb_preview.sheetnames:
-                    lldp_ws = wb_preview["LLDP Mismatch + Link Down"]
-                    lldp_headers = [c.value for c in lldp_ws[3] if c.value]
-                    stats = []
-                    if "PP_Enriched" in lldp_headers:
-                        pp_idx = lldp_headers.index("PP_Enriched") + 1
-                        enriched = sum(1 for r in range(4, lldp_ws.max_row+1) if lldp_ws.cell(row=r, column=pp_idx).value and str(lldp_ws.cell(row=r, column=pp_idx).value).strip())
-                        stats.append(f"PP_Enriched on {enriched}/{max(1, lldp_ws.max_row-3)} LLDP rows")
-                    if "Block" in lldp_headers:
-                        b_idx = lldp_headers.index("Block") + 1
-                        uniq = sorted({str(lldp_ws.cell(row=r, column=b_idx).value) for r in range(4, lldp_ws.max_row+1) if lldp_ws.cell(row=r, column=b_idx).value})
-                        stats.append(f"Blocks: {', '.join(uniq[:4])}{'…' if len(uniq)>4 else ''}")
-                    if stats:
-                        st.caption(" | ".join(stats))
-                    # Mention if we pulled extra device info columns from allconnections
-                    allconn_headers = [h for h in lldp_headers if str(h).startswith('AllConn_')]
-                    if allconn_headers:
-                        st.caption(f'Pulled extra device info from allconnections: {", ".join(allconn_headers[:4])}')
-                    # The specific info user needs: Source_port (PP labels), Rack, Elevation, DMARC1/2, Z Rack/Elev, T1 info, Interface, History
-                    needed = [h for h in lldp_headers if h in ["Source_port", "Destination_port", "Rack", "Elevation", "DMARC1", "DMARC2", "Z Interface", "Z Rack", "Z Elevation", "Possible T1 Rack / U", "T1 Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info"]]
-                    if needed:
-                        st.caption(f'Added from allconnections: {", ".join(needed)} (for context on each error – parsed from the single-string Full Label/EasyMark fields)')
-
-                # ====================== SILENT CENTRAL LOGGING (exact pattern user approved) ======================
-                # No extra button. Happens automatically. Only warns on real failure.
-                try:
-                    counts = extract_counts_for_logging(result_bytes)
-
-                    for entry in counts:
-                        blk = entry["block"]
-                        for cat in ["LLDP Mismatch + Link Down", "Optic Errors", "FEC_BER Errors", "Interface Down Errors"]:
-                            cnt = entry.get(cat, 0) or 0
-                            if cnt > 0:
-                                log_errors(
-                                    hall="HSG17",
-                                    rack_type="T0-Host",
-                                    building=blk,           # This becomes the "Block" in the Dashboard
-                                    error_category=cat,
-                                    count=int(cnt),
-                                    source_file=filename,
-                                    processed_by="HSG17_T0_Host_v1"
-                                )
-                except Exception as log_exc:
-                    st.warning(f"Central logging encountered an issue (non-fatal): {log_exc}")
-
-                # ====================== DOWNLOAD ======================
-                st.download_button(
-                    "📥 Download Formatted HSG17 Report",
-                    data=result_bytes,
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="hsg17_download"
-                )
-
-                st.caption("All processing is local. Rich features now active: connected-component clustering (orange/yellow rows by Cluster on LLDP tab), PP enrichment, prominent Block (DH-xxx) column. Summary + per-Block counts are silently logged for the Dashboard.")
-
-        except Exception as e:
-            st.error(f"Error during HSG17 processing: {e}")
-            st.exception(e)
+elif not (lv_file and cutsheet_files):
+    st.info("Upload the LV Portal export and at least one cutsheet / allconnections file, then click Generate.")
 
 st.markdown("---")
-st.caption("HSG17 clean build • Block strategy uses the authoritative DH sectors from your Bootstrap Sequence document • Same central log as JPB15/SYD20 so one Dashboard works for everything")
+st.caption("HSG17 • Gold T1-to-T0 formatter • Same central log as before so the Dashboard and all its features continue to work • All processing is local.")

@@ -74,7 +74,7 @@ if run_btn and lv_file and cutsheet_files:
                 use_container_width=True,
             )
 
-            st.info("The output has the 5 tabs, exact column orders, pair borders, styling, and enrichment from the gold formatter.")
+            st.info("")
 
             # ====================== SILENT CENTRAL LOGGING (to retain Dashboard features) ======================
             # Log the counts so the HSG17 Dashboard shows current state + deltas.

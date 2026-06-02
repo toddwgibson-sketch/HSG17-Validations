@@ -11,7 +11,7 @@ st.markdown("""
 HSG17 validation toolkit.
 
 **Available pages:**
-- **01_HSG17_T0_to_Host** — T1-to-T0 formatter ()
+- **01_HSG17_T0_to_Host** — T1-to-T0 formatter 
 - **10_HSG17_Dashboard** — Executive view (current state + deltas)
 
 Use the sidebar to navigate.

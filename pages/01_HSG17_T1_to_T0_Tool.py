@@ -33,7 +33,7 @@ with st.sidebar:
         help="The export containing the error sheets (Optic, FEC, Interface Down, ...)"
     )
     cutsheet_files = st.file_uploader(
-        "Master Cutsheet(s) / Allconnections (hold Ctrl or Cmd for multiple)",
+        "Master Cutsheet(s) / Allconnections",
         type=["xlsx", "xlsm"],
         accept_multiple_files=True,
         help="The T1toT0 allconnections or master cutsheet for enrichment."

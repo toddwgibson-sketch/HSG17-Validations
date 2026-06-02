@@ -15,17 +15,22 @@ from pathlib import Path
 from utils.auth import require_login
 from utils.data_logger import log_errors
 from utils.t1_to_t0_formatter import format_report
+from utils.hsg17_models import derive_placement_group
 
 require_login()
 
 st.set_page_config(page_title="HSG17 T0-to-Host", page_icon="🖥️", layout="wide")
 st.title("HSG17 T0-to-Host Validator (T1-to-T0 Gold)")
-st.caption("Exact gold logic • T1-to-T0 allconnections support • Feeds central Dashboard")
+st.caption("Exact gold logic • Tracks by Placement Group (per Bootstrap Sequence) • Feeds central Dashboard")
 
 st.markdown("""
 **Inputs:**
 - **LV Portal Validation Export** (.xlsx): the export with sheets like Optic Errors, FEC_BER Errors, Interface Down Errors (and optional LLDP/mismatch).
 - **Master Cutsheet(s) / Allconnections**: your T1toT0 allc (or master cutsheet). The lookup supports the columns in QFABT1toT0_..._allconnections.xlsx (DeviceA/DeviceB combined host+port, RackA/RackB, Source_port, DMARC*, Destination_port, EasyMark+, Physical Ports etc.).
+
+Issues are tracked by **Placement Group** (see HSG17 Bootstrap Sequence for rack->PG mapping; e.g. rack 3110 = PG14).
+
+For your untouched original Dashboard compatibility the error categories are logged under the original names (LLDP Mismatch + Link Down etc.).
 
 Upload, generate, download the `_formatted.xlsx` with the 5 perfect tabs (Summary navy, Mispatches red, Downlinks orange, Optics brown, FEC Errors purple).
 All processing is local.
@@ -82,23 +87,39 @@ if run_btn and lv_file and cutsheet_files:
 
             # ====================== SILENT CENTRAL LOGGING (to retain Dashboard features) ======================
             # Log the counts so the HSG17 Dashboard shows current state + deltas.
-            # Using placeholder building since this flow uses racks from allc rather than DH blocks.
+            # Use placement group (from rack in allc, per HSG17 Bootstrap Sequence)
             try:
                 source_name = lv_file.name if lv_file else "unknown"
+                placement = "PG14"  # fallback for rack 3110 case
+                try:
+                    import pandas as pd
+                    if cuts_tmp_paths:
+                        allc_df = pd.read_excel(cuts_tmp_paths[0], sheet_name=0)
+                        rack_cols = [c for c in allc_df.columns if "rack" in str(c).lower()]
+                        if rack_cols:
+                            racks = allc_df[rack_cols[0]].dropna().astype(str).str.replace(r"Rack\s*", "", regex=True).str.strip().str.split().str[0]
+                            racks = racks[racks.str.len() > 0]
+                            if len(racks) > 0:
+                                pgs = racks.apply(derive_placement_group)
+                                most_common = pgs.value_counts().index[0]
+                                if most_common and most_common.startswith("PG"):
+                                    placement = most_common
+                except Exception:
+                    pass
                 for cat_key, cnt in counts.items():
                     if cnt > 0:
-                        # Map keys to nice category names
+                        # Map to legacy category names so the untouched original Dashboard cards continue to work and update
                         cat_map = {
-                            "mispatches": "Mispatches",
-                            "downlinks": "Downlinks",
-                            "optics": "Optics",
-                            "fec": "FEC Errors"
+                            "mispatches": "LLDP Mismatch + Link Down",
+                            "downlinks": "Interface Down Errors",
+                            "optics": "Optic Errors",
+                            "fec": "FEC_BER Errors"
                         }
                         cat_name = cat_map.get(cat_key, cat_key.title())
                         log_errors(
                             hall="HSG17",
                             rack_type="T1-T0",
-                            building="T1toT0",  # placeholder; Dashboard will group under this
+                            building=placement,  # placement group e.g. "PG14"
                             error_category=cat_name,
                             count=int(cnt),
                             source_file=source_name,
@@ -120,4 +141,4 @@ elif not (lv_file and cutsheet_files):
     st.info("Upload the LV Portal export and at least one cutsheet / allconnections file, then click Generate.")
 
 st.markdown("---")
-st.caption("HSG17 • Gold T1-to-T0 formatter • Same central log as before so the Dashboard and all its features continue to work • All processing is local.")
+st.caption("HSG17 • Gold T1-to-T0 formatter • Issues tracked by Placement Group (PG14 for rack 3110) per Bootstrap Sequence • Categories mapped for your untouched original Dashboard compatibility • All processing is local.")

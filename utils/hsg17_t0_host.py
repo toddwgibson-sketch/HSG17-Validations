@@ -30,6 +30,49 @@ from openpyxl.utils import get_column_letter
 from utils.hsg17_models import normalize_block, PG_TO_DH, RACK_TO_BLOCK
 
 
+def parse_label_fields(label_str: str) -> dict:
+    """Parse the single-string Full Label or EasyMark from allconnections into structured fields.
+    Why single string? The allconnections export stores rich path/patch panel info this way
+    (for EasyMark labeling software or as a flat export field) – it packs source device/color,
+    rack/elev, PP label, dest device, multiple paths into one \n-delimited blob.
+    We parse it here so the report can have separate useful columns (Rack, Elevation, Source_port as the PP label, etc.)
+    instead of one big unreadable string.
+    """
+    if not label_str:
+        return {}
+    text = str(label_str)
+    result = {}
+    # PP labels like PP.HSG17:4.DH4.R2809.U27.MPO1 or PP.HSG17.3.DH2... (synthetic compat)
+    pps = re.findall(r'PP\.HSG17[:.][^\s\n|]+', text, re.IGNORECASE)
+    if pps:
+        result['pp_label'] = pps[0]
+        if len(pps) > 1:
+            result['pp_label2'] = pps[1]
+    # Racks and U (elevation): Rack 2809 U1 or R2809.U1 or in PP R2809.U27
+    rack_elevs = re.findall(r'(?:Rack\s*|R)(\d+)[.\s]*U(\d+)', text, re.IGNORECASE)
+    if rack_elevs:
+        result['rack'] = rack_elevs[0][0]
+        result['elev'] = rack_elevs[0][1]
+        if len(rack_elevs) > 1:
+            result['rack2'] = rack_elevs[1][0]
+            result['elev2'] = rack_elevs[1][1]
+    # Also catch standalone Rxxxx.Uyy in PP labels even without preceding Rack word
+    if 'rack' not in result:
+        re_r = re.search(r'R(\d+)[.\s]*U(\d+)', text, re.IGNORECASE)
+        if re_r:
+            result['rack'] = re_r.group(1)
+            result['elev'] = re_r.group(2)
+    # Source device line e.g. hsg17-... color or device
+    dev_match = re.search(r'(hsg17-[^\s\n|]+)', text, re.IGNORECASE)
+    if dev_match:
+        result['device'] = dev_match.group(1)
+    # Color if present e.g. Blue, Orange
+    color_match = re.search(r'\b(Blue|Orange|Green|Red|Yellow|Black|White)\b', text, re.IGNORECASE)
+    if color_match:
+        result['color'] = color_match.group(1)
+    return result
+
+
 # ================== Styles (matching the "pretty" vibe the user likes) ==================
 HEADER_FILL = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
 HEADER_FONT = Font(name="Arial", bold=True, color="FFFFFF", size=11)
@@ -378,6 +421,18 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
             if t0:
                 info["T0"] = t0
 
+            # Parse the single-string fields so we can split into structured columns (Rack, Elevation, Source_port as clean PP label, etc.)
+            parsed = parse_label_fields(fl)
+            for k, v in parsed.items():
+                info[k] = v
+
+            # Pull explicit short/structured cols from allc that are already split (Source_port etc.)
+            for col in ['Source_port', 'Destination_port', 'T0 Switch Port', 'Cable Info', 'Cable Color',
+                        'DeviceA Rack', 'DeviceB Rack', 'DeviceA RU', 'DeviceB RU', 'RackA', 'RackB']:
+                val = _safe_str(r.get(col))
+                if val:
+                    info[col] = val
+
             # Pull "mate" (the other end of the connection) device info -- this is the key "device information from allconnects"
             if key_dev_col:
                 other_dev_col = dev_b_col if key_dev_col == dev_a_col else dev_a_col
@@ -423,6 +478,13 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
                     merged = {**existing, **new_info}
                     pp_lookup[key] = merged
 
+    # Build device-name-only lookup for fallback matching when exact port doesn't match in allc (e.g. different swp port for the T0 in error vs allc host connections)
+    dev_lookup = {}
+    for key, inf in list(pp_lookup.items()):
+        dev = key[0]
+        if dev and dev not in dev_lookup:
+            dev_lookup[dev] = inf
+
     for name, df in normalized.items():
         if name in ("allconnections", "Summary"):
             out[name] = df
@@ -456,6 +518,12 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
                         key_b = (_safe_str(r.get(dev_b_col)), _safe_str(r.get(port_b_col)))
                         info = pp_lookup.get(key_b, {})
 
+                    if not info:
+                        # Fallback to device name only (when exact port doesn't match in allc, e.g. swp3s0 in error vs swp1s0 in allc for same t0 device)
+                        dev = _safe_str(r.get(dev_b_col)) if dev_b_col else _safe_str(r.get(dev_a_col))
+                        if dev in dev_lookup:
+                            info = dev_lookup[dev]
+
                     # Attach the device/connection info from the matched allconnections row.
                     # This is the absolute minimum the user asked for: pull real device details / path from the big connections file
                     # to give context on what the error row "should" be connected to.
@@ -463,43 +531,53 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
                     if info:
                         # Pull key fields from allconnections to enrich the report with device/rack/elev/port/PP info
                         # Use names that match what user wants in the sheets (Source_port, Rack, etc.)
+                        # Parse the single string fields (Full Label/EasyMark) so they are split, not one big string in the report.
                         pp = info.get("PP", "") or info.get("Full Label", "") or info.get("EasyMark+ --- Patch Panels", "")
-                        src_port = info.get("Source_port", "") or pp
-                        dest_port = info.get("Destination_port", "") or pp
+                        # Prefer the clean PP label from the parsed Full Label (e.g. PP.HSG17:...) as Source_port to match the useful example format
+                        src_port = info.get("pp_label") or info.get("Source_port") or pp
+                        dest_port = info.get("pp_label2") or info.get("Destination_port") or pp
                         enriched["Source_port"] = str(src_port) if src_port else ""
                         enriched["Destination_port"] = str(dest_port) if dest_port else ""
 
-                        # Rack / Elevation from A or B side in allc
-                        rack = info.get("DeviceA Rack", "") or info.get("DeviceB Rack", "") or info.get("RackA", "") or info.get("RackB", "") or info.get("Rack_A", "") or info.get("Rack_B", "")
-                        elev = info.get("DeviceA RU", "") or info.get("DeviceB RU", "") or info.get("Elevation_A", "") or info.get("Elevation_B", "") or info.get("Elevation", "")
+                        # Rack / Elevation – prefer parsed from label, fallback to column values
+                        rack = info.get("rack") or info.get("DeviceA Rack") or info.get("DeviceB Rack") or info.get("RackA") or info.get("RackB") or ""
+                        elev = info.get("elev") or info.get("DeviceA RU") or info.get("DeviceB RU") or info.get("Elevation_A") or info.get("Elevation_B") or ""
                         if rack:
                             enriched["Rack"] = str(rack)
                         if elev:
                             enriched["Elevation"] = str(elev)
 
-                        # DMARC only if present (user noted may be none)
+                        # Second path as Z if present
+                        if info.get("rack2"):
+                            enriched["Z Rack"] = str(info["rack2"])
+                        if info.get("elev2"):
+                            enriched["Z Elevation"] = str(info["elev2"])
+
+                        # DMARC only if present (user noted may be none for HSG17)
                         if info.get("DMARC1"):
                             enriched["DMARC1"] = str(info["DMARC1"])
                         if info.get("DMARC2"):
                             enriched["DMARC2"] = str(info["DMARC2"])
 
-                        # Z / T1 / Interface / History from allc if present in this file
-                        for k in ["Z_Interface", "Z_Rack", "Z_Elevation", "T1_Rack", "T1_Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"]:
+                        # Z / T1 / Interface / History / T0 / Cable from allc if present
+                        for k in ["Z_Interface", "T1_Rack", "T1_Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"]:
                             if info.get(k):
                                 nice = k.replace(" ", "_").replace("/", "_")
-                                if nice in ["T1_Rack", "T1_Port"]:
-                                    enriched["Possible " + nice.replace("_", " / ")] = str(info[k])  # to match example "Possible T1 Rack / U"
+                                if "T1" in nice:
+                                    enriched["Possible " + nice.replace("_", " / ")] = str(info[k])
                                 else:
                                     enriched[nice] = str(info[k])
 
-                        # Always add AllConn_ prefixed for all pulled info (device details)
+                        # Always add AllConn_ for the raw single-string fields too (for reference) + other device info
                         for k, v in info.items():
                             if v:
                                 nice_k = f"AllConn_{k.replace(' ', '_').replace('/', '_')}"
                                 if nice_k not in enriched:
                                     enriched[nice_k] = str(v)
 
-                        enriched["PP_Enriched"] = str(pp) if pp else ""
+                        # Set PP_Enriched to the clean label (not the full big string), to avoid single string with everything
+                        pp_label_clean = info.get("pp_label") or info.get("Source_port") or src_port
+                        enriched["PP_Enriched"] = str(pp_label_clean) if pp_label_clean else ""
                     else:
                         enriched["PP_Enriched"] = ""
                         enriched["Source_port"] = ""
@@ -512,7 +590,7 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
 
                 # Drop any optional enrichment columns that are completely empty for this sheet
                 # (e.g. no DMARCs for these HSG17 connects, as user noted)
-                cols_to_check = [c for c in list(df.columns) if c.startswith("AllConn_") or c in ["DMARC1", "DMARC2", "Z Interface", "Z Rack", "Z Elevation", "Possible T1 Rack / U", "T1 Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color", "Source_port", "Destination_port", "Rack", "Elevation"]]
+                cols_to_check = [c for c in list(df.columns) if c.startswith("AllConn_") or c in ["DMARC1", "DMARC2", "Z Interface", "Z Rack", "Z Elevation", "Possible T1 Rack / U", "T1 Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color", "Source_port", "Destination_port", "Rack", "Elevation"] or any(x in c for x in ["Z_", "T1_"])]
                 for col in cols_to_check:
                     if col in df.columns:
                         non_empty = df[col].fillna("").astype(str).str.strip().ne("")
@@ -544,9 +622,9 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
         for extra in ["Cluster Size", "Notes", "PP_Enriched"] + core_enriched + ["AllConn_Mate", "AllConn_T0", "AllConn_Path", "AllConn_Rack", "AllConn_Cable_Type"]:
             if extra in df.columns and extra not in front:
                 front.append(extra)
-        # Any other AllConn_* or useful pulled from allconnections (device info etc)
+        # Any other AllConn_* or useful pulled from allconnections (device info etc) – this will catch parsed fields like Z_Elevation too if named that way
         for c in list(df.columns):
-            if (c.startswith("AllConn_") or c in core_enriched) and c not in front:
+            if (c.startswith("AllConn_") or c in core_enriched or any(x in c for x in ["Z_", "T1_", "Source_port", "Destination_port", "Rack", "Elevation", "DMARC", "Interface", "History"])) and c not in front:
                 front.append(c)
         other = [c for c in df.columns if c not in front]
         df = df[front + other]
@@ -694,9 +772,9 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
         for extra in ["Cluster Size", "Notes", "PP_Enriched"] + core_enriched + ["AllConn_Mate", "AllConn_T0", "AllConn_Path", "AllConn_Rack", "AllConn_Cable_Type", "Full Switch Down?", "A Device Down Count"]:
             if extra in df.columns and extra not in front:
                 front.append(extra)
-        # Any other AllConn_* or useful pulled from allconnections (device info etc)
+        # Any other AllConn_* or useful pulled from allconnections (device info etc) – this will catch parsed fields like Z_Elevation too if named that way
         for c in list(df.columns):
-            if (c.startswith("AllConn_") or c in core_enriched) and c not in front:
+            if (c.startswith("AllConn_") or c in core_enriched or any(x in c for x in ["Z_", "T1_", "Source_port", "Destination_port", "Rack", "Elevation", "DMARC", "Interface", "History"])) and c not in front:
                 front.append(c)
         other = [c for c in df.columns if c not in front]
         df = df[front + other]
@@ -751,7 +829,7 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
                     except Exception:
                         pass
                 # Force str for the enriched info columns the user wants (to avoid 1009.0 etc in Excel for rack/elev values)
-                if col_name in ["Rack", "Elevation", "DMARC1", "DMARC2", "Z Rack", "Z Elevation", "T1 Rack", "Possible T1 Rack / U", "Possible T1 Port", "Z_Interface", "T1_Rack", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"] or col_name.startswith("AllConn_") or col_name in ["Source_port", "Destination_port"]:
+                if col_name in ["Rack", "Elevation", "DMARC1", "DMARC2", "Z Rack", "Z Elevation", "T1 Rack", "Possible T1 Rack / U", "Possible T1 Port", "Z_Interface", "T1_Rack", "Interface", "History", "T0 Switch Port", "Cable Info", "Cable Color"] or col_name.startswith("AllConn_") or col_name in ["Source_port", "Destination_port"] or any(x in col_name for x in ["Z_", "T1_"]):
                     val = str(val) if val is not None else ""
                 cell = ws.cell(row=r_idx, column=c_idx, value=val)
                 cell.font = BODY_FONT

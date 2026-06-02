@@ -122,7 +122,7 @@ if st.button("🚀 Process Files", type="primary", disabled=not can_process, key
                     # The specific info user needs: Source_port (PP labels), Rack, Elevation, DMARC1/2, Z Rack/Elev, T1 info, Interface, History
                     needed = [h for h in lldp_headers if h in ["Source_port", "Destination_port", "Rack", "Elevation", "DMARC1", "DMARC2", "Z Interface", "Z Rack", "Z Elevation", "Possible T1 Rack / U", "T1 Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info"]]
                     if needed:
-                        st.caption(f'Added from allconnections: {", ".join(needed)} (for context on each error)')
+                        st.caption(f'Added from allconnections: {", ".join(needed)} (for context on each error – parsed from the single-string Full Label/EasyMark fields)')
 
                 # ====================== SILENT CENTRAL LOGGING (exact pattern user approved) ======================
                 # No extra button. Happens automatically. Only warns on real failure.

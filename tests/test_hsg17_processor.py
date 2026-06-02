@@ -42,7 +42,7 @@ def make_allconnections_df() -> pd.DataFrame:
     rows = [
         # DH-002 via PP label
         {"DeviceA Name": "hsg17-q2-p3-cpu-01", "DeviceA Port": "Eth1/1", "DeviceB Name": "hsg17-q2-p3-t0-a", "DeviceB Port": "Eth1/1",
-         "Full Label": "PP.HSG17.3.DH2.R03.01-02", "EasyMark+ --- Patch Panels": "DH-002 / Rack 0807", "T0 Switch": "t0-leaf-01", "Cable Type": "OM4", "Cable Info": "cable-foo",
+         "Full Label": "SOURCE PORT\nhsg17-q2-p3-cpu-01 1L Blue\nRack 1009 U3\nDESTINATION PATH 1\nPP.HSG17.3.DH2.R03.01-02\nhsg17-q2-p3-t0-a swp1s0\nRack 0807 U1", "EasyMark+ --- Patch Panels": "DH-002 / Rack 0807", "T0 Switch": "t0-leaf-01", "Cable Type": "OM4", "Cable Info": "cable-foo",
          "Rack A": "1009", "Elevation A": "3", "DMARC1": "DM1", "DMARC2": "DM2", "Z Rack": "9706", "Z Elevation": "9", "T1 Rack": "9706", "T1 Port": "swp13s0", "Interface": "swp31s0", "History": "initial", "Z Interface": "z-intf-foo", "T0 Switch Port": "t0p1"},
         {"DeviceA Name": "hsg17-q2-p3-cpu-02", "DeviceA Port": "Eth1/2", "DeviceB Name": "hsg17-q2-p3-t0-b", "DeviceB Port": "Eth1/2",
          "Full Label": "SomeLabel DH-002 extra", "EasyMark+ --- Patch Panels": "", "T0 Switch": "t0-leaf-02"},

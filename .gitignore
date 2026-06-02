@@ -1,6 +1,10 @@
 ﻿# Error log - intentionally not committed
 data/validation_error_log.xlsx
 
+# Temp report outputs produced by tests / dev runs (the real ones users download are kept by user)
+HSG17_T0_Host_*.xlsx
+test_output*.xlsx
+
 # Python
 __pycache__/
 *.py[cod]

@@ -130,23 +130,27 @@ def derive_block(row: pd.Series, pp_col_candidates: List[str], rack_col_candidat
 # ================== Stage 1: Ingest ==================
 def ingest(allconnections_bytes: bytes, cutsheet_bytes: bytes) -> Dict[str, pd.DataFrame]:
     """Load both inputs. Returns dict of useful frames."""
-    # All connections (large — we only keep columns we need for enrichment)
-    allc = pd.read_excel(io.BytesIO(allconnections_bytes), sheet_name="Sheet1")
-
-    # Keep the columns that matter for PP enrichment and joining
-    keep_allc = [c for c in allc.columns if any(k in str(c).lower() for k in
-                 ["devicea", "deviceb", "rack", "port", "full label", "easymark", "patch", "source_port", "destination_port", "t0 switch"])]
-    allc = allc[[c for c in keep_allc if c in allc.columns]].copy()
+    # All connections (large — keep all columns for strongest possible PP / cutsheet enrichment and future joins)
+    # Use sheet_name=0 for robustness (first sheet) instead of hardcoding "Sheet1"
+    allc = pd.read_excel(io.BytesIO(allconnections_bytes), sheet_name=0).copy()
 
     # Cutsheet — all 4 error sheets + Summary
     cuts = {}
-    with io.BytesIO(cutsheet_bytes) as bio:
-        xl = pd.ExcelFile(bio)
-        for sheet in ERROR_SHEETS:
-            if sheet in xl.sheet_names:
-                cuts[sheet] = pd.read_excel(xl, sheet_name=sheet)
-        if "Summary" in xl.sheet_names:
-            cuts["Summary"] = pd.read_excel(xl, sheet_name="Summary")
+    if not cutsheet_bytes:
+        raise ValueError("Pre-classified cutsheet is required. Please upload the rack_validation_merged_*.xlsx file containing the error sheets.")
+    try:
+        with io.BytesIO(cutsheet_bytes) as bio:
+            xl = pd.ExcelFile(bio)
+            for sheet in ERROR_SHEETS:
+                if sheet in xl.sheet_names:
+                    cuts[sheet] = pd.read_excel(xl, sheet_name=sheet)
+            if "Summary" in xl.sheet_names:
+                cuts["Summary"] = pd.read_excel(xl, sheet_name="Summary")
+    except Exception as e:
+        raise ValueError(f"Failed to read cutsheet file as Excel (expected the pre-classified validation file): {e}")
+
+    if not any(s in cuts for s in ERROR_SHEETS):
+        raise ValueError(f"Cutsheet loaded but contained none of the expected error sheets {ERROR_SHEETS}. Check that you uploaded the correct pre-classified file.")
 
     return {"allconnections": allc, "cutsheet_sheets": cuts}
 
@@ -249,26 +253,74 @@ def cluster_mismatches(df: pd.DataFrame) -> pd.DataFrame:
 
 # ================== Stage 3+4: Enrich + Analyze ==================
 def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
-    """Enrichment + real mismatch clustering + PP joins."""
+    """Enrichment + real mismatch clustering + PP joins.
+
+    Stronger joins (v2):
+    - Index allconnections by BOTH ends (A and B device+port) so errors on either side can hit.
+    - Try A-side key first on error rows, then B-side key if miss.
+    - Support many common column name variants on both allc and cutsheet sides.
+    - Capture richer PP info (Full Label + EasyMark combined when available).
+    - Pull additional useful fields (t0 switch info etc.) if present in allc.
+    """
     out = {}
     allc = normalized.get("allconnections")
 
-    # Build fast lookup from allconnections for PP enrichment
+    # Build fast lookup from allconnections for PP enrichment (index by (dev, port) for *both* sides of the link)
     pp_lookup: Dict[tuple, Dict] = {}
     if allc is not None and not allc.empty:
-        # Try common column names present in the user's allconnections file
-        dev_a = next((c for c in allc.columns if "DeviceA Name" in str(c) or c == "DeviceA Name"), None)
-        port_a = next((c for c in allc.columns if "DeviceA Port" in str(c) or c == "DeviceA Port"), None)
-        full_label_col = next((c for c in allc.columns if "Full Label" in str(c)), None)
-        easymark_col = next((c for c in allc.columns if "EasyMark" in str(c)), None)
+        # Flexible column discovery on the (now full) allconnections frame
+        def _find_col(candidates: list[str]) -> Optional[str]:
+            for cand in candidates:
+                for c in allc.columns:
+                    cl = str(c).lower()
+                    if cand.lower() in cl or c == cand:
+                        return c
+            return None
 
-        if dev_a and port_a:
+        dev_a_col = _find_col(["DeviceA Name", "Device A Name", "Source Device Name", "device_a"])
+        port_a_col = _find_col(["DeviceA Port", "Device A Port", "Source Device Port", "source_port"])
+        dev_b_col = _find_col(["DeviceB Name", "Device B Name", "Destination Device Name", "device_b"])
+        port_b_col = _find_col(["DeviceB Port", "Device B Port", "Destination Device Port", "destination_port"])
+
+        full_label_col = _find_col(["Full Label", "Full_Label", "full label"])
+        easymark_col = _find_col(["EasyMark", "easymark", "Patch Panel"])
+        t0_col = _find_col(["T0 Switch", "t0 switch", "T0 Port", "t0_switch_port"])
+
+        def _get_pp_info(r: pd.Series) -> Dict[str, str]:
+            fl = _safe_str(r.get(full_label_col)) if full_label_col else ""
+            em = _safe_str(r.get(easymark_col)) if easymark_col else ""
+            t0 = _safe_str(r.get(t0_col)) if t0_col else ""
+            # Combine for a rich single string the user can scan
+            if fl and em:
+                combined = f"{fl} | {em}"
+            else:
+                combined = fl or em or ""
+            info = {"PP": combined}
+            if t0:
+                info["T0"] = t0
+            return info
+
+        if dev_a_col and port_a_col:
             for _, r in allc.iterrows():
-                key = (_safe_str(r.get(dev_a)), _safe_str(r.get(port_a)))
-                pp_lookup[key] = {
-                    "Full_Label": _safe_str(r.get(full_label_col)) if full_label_col else "",
-                    "EasyMark": _safe_str(r.get(easymark_col)) if easymark_col else "",
-                }
+                key = (_safe_str(r.get(dev_a_col)), _safe_str(r.get(port_a_col)))
+                if key[0] or key[1]:  # avoid empty keys
+                    pp_lookup[key] = _get_pp_info(r)
+
+        if dev_b_col and port_b_col:
+            for _, r in allc.iterrows():
+                key = (_safe_str(r.get(dev_b_col)), _safe_str(r.get(port_b_col)))
+                if key[0] or key[1]:
+                    # merge (don't overwrite if A already gave richer info)
+                    existing = pp_lookup.get(key, {})
+                    new_info = _get_pp_info(r)
+                    if not existing.get("PP") and new_info.get("PP"):
+                        pp_lookup[key] = new_info
+                    elif existing.get("PP") and new_info.get("PP") and len(new_info["PP"]) > len(existing.get("PP", "")):
+                        pp_lookup[key] = new_info
+                    # always prefer having a T0 if present
+                    if new_info.get("T0") and not existing.get("T0"):
+                        existing["T0"] = new_info["T0"]
+                        pp_lookup[key] = existing
 
     for name, df in normalized.items():
         if name in ("allconnections", "Summary"):
@@ -277,16 +329,27 @@ def enrich_and_analyze(normalized: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
 
         df = df.copy()
 
-        # === PP Enrichment join (from allconnections) ===
+        # === PP Enrichment join (from allconnections) - stronger A then B side ===
         if pp_lookup and not df.empty:
-            dev_col = next((c for c in ["Device A Name", "Source Device Name", "Device Name"] if c in df.columns), None)
-            port_col = next((c for c in ["Device A Port", "Source Device Port", "Device A Port"] if c in df.columns), None)
+            # Error-side column discovery (cutsheet side)
+            dev_a_col = next((c for c in ["Device A Name", "Source Device Name", "Device Name", "device_a"] if c in df.columns), None)
+            port_a_col = next((c for c in ["Device A Port", "Source Device Port", "Device A Port"] if c in df.columns), None)
+            dev_b_col = next((c for c in ["Device B Name", "Destination Device Name", "Device B Name", "device_b"] if c in df.columns), None)
+            port_b_col = next((c for c in ["Device B Port", "Destination Device Port", "Device B Port"] if c in df.columns), None)
 
-            if dev_col and port_col:
+            if dev_a_col and port_a_col:
                 def _lookup_pp(r):
-                    key = (_safe_str(r.get(dev_col)), _safe_str(r.get(port_col)))
+                    # Try A side
+                    key = (_safe_str(r.get(dev_a_col)), _safe_str(r.get(port_a_col)))
                     info = pp_lookup.get(key, {})
-                    return info.get("Full_Label", "") or info.get("EasyMark", "")
+                    pp = info.get("PP", "")
+                    if not pp and dev_b_col and port_b_col:
+                        # Fallback to B side on this error row
+                        key_b = (_safe_str(r.get(dev_b_col)), _safe_str(r.get(port_b_col)))
+                        info = pp_lookup.get(key_b, {})
+                        pp = info.get("PP", "")
+                    extra = f" [T0:{info.get('T0','')}]" if info.get("T0") else ""
+                    return (pp + extra).strip()
 
                 df["PP_Enriched"] = df.apply(_lookup_pp, axis=1)
 
@@ -323,6 +386,9 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
     summary_ws["A1"] = f"HSG17 T0-to-Host Validation Summary — {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     summary_ws["A1"].font = TITLE_FONT
     summary_ws.merge_cells("A1:F1")
+    summary_ws["A2"] = f"Source: {source_basename} | Blocks derived using PP labels + rack ranges + device patterns (see DESIGN.md)"
+    summary_ws["A2"].font = Font(name="Arial", size=9, italic=True, color="666666")
+    summary_ws.merge_cells("A2:F2")
 
     # Build summary data from the 4 error sheets
     summary_rows: List[List[Any]] = [["Block", "LLDP Mismatch + Link Down", "Optic Errors", "FEC_BER Errors", "Interface Down Errors", "Total"]]
@@ -368,6 +434,8 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
     totals = [sum(r[i] for r in summary_rows[1:]) for i in range(1, 6)]
     summary_rows.append(["TOTAL"] + totals)
 
+    total_row_idx = 3 + len(summary_rows) - 1
+
     for r_idx, row in enumerate(summary_rows, start=3):
         for c_idx, val in enumerate(row, start=1):
             cell = summary_ws.cell(row=r_idx, column=c_idx, value=val)
@@ -377,12 +445,19 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
             if r_idx == 3:  # header
                 cell.fill = HEADER_FILL
                 cell.font = HEADER_FONT
-            if r_idx == len(summary_rows):  # total
-                cell.font = Font(name="Arial", bold=True)
+            if r_idx == total_row_idx:  # TOTAL row
+                cell.font = Font(name="Arial", bold=True, size=11)
+                cell.fill = LIGHT_GREEN_FILL
 
-    # Column widths
+    # Column widths + usability
     for col in range(1, 7):
         summary_ws.column_dimensions[get_column_letter(col)].width = 28 if col == 1 else 18
+
+    # Freeze header and add filter for the summary table too (header at row 3)
+    summary_ws.freeze_panes = "A4"
+    last_col_sum = get_column_letter(6)
+    last_row_sum = total_row_idx
+    summary_ws.auto_filter.ref = f"A3:{last_col_sum}{last_row_sum}"
 
     # --- The 4 detailed error sheets (with Block + Cluster promoted) ---
     for sheet_name in ERROR_SHEETS:
@@ -402,20 +477,31 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
         other = [c for c in df.columns if c not in front]
         df = df[front + other]
 
+        # For the LLDP sheet, sort rows by Cluster (stable sort) so that mismatch pairs / connected components
+        # are grouped together consecutively. This makes the orange/yellow highlighting dramatically more useful
+        # for visual pairing review (stronger mismatch pairing visuals).
+        if sheet_name == "LLDP Mismatch + Link Down" and "Cluster" in df.columns:
+            df = df.sort_values(by=["Cluster"], kind="stable").reset_index(drop=True)
+
         ws = wb.create_sheet(sheet_name)
 
-        # Title
+        # Title + source note (makes the report more self-documenting)
+        num_cols = len(df.columns)
         ws["A1"] = f"HSG17 — {sheet_name}"
         ws["A1"].font = TITLE_FONT
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=min(10, len(df.columns)))
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=num_cols)
+        ws["A2"] = f"Source: {source_basename}  |  Enriched with PP from allconnections + DH Block derivation  |  Cluster = connected-component grouping on mismatches (swap pairs share id)"
+        ws["A2"].font = Font(name="Arial", size=9, italic=True, color="666666")
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=num_cols)
 
         is_lldp = sheet_name == "LLDP Mismatch + Link Down"
 
-        # Write data with rich coloring for LLDP clusters
+        # Write data with rich coloring for LLDP clusters (only on the "pair" columns so the report stays readable)
+        # We deliberately do NOT color the left structural columns (Block/Cluster/PP_Enriched) or the A-side context.
+        lldp_pair_cols = {"Device B Name", "Device B Port", "Expected Device B Name", "Expected Device B Port"}
         for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), start=3):
             cluster_val = None
             if is_lldp and "Cluster" in df.columns:
-                # Find cluster value in the written row
                 try:
                     cluster_idx_in_df = list(df.columns).index("Cluster")
                     cluster_val = row[cluster_idx_in_df] if cluster_idx_in_df < len(row) else None
@@ -423,6 +509,7 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
                     cluster_val = None
 
             for c_idx, val in enumerate(row, start=1):
+                col_name = df.columns[c_idx-1]
                 cell = ws.cell(row=r_idx, column=c_idx, value=val if val is not None else "")
                 cell.font = BODY_FONT
                 cell.border = THIN_BORDER
@@ -431,14 +518,15 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
                     cell.fill = HEADER_FILL
                     cell.font = HEADER_FONT
                 else:
-                    # Highlight Block (always)
-                    if df.columns[c_idx-1] == "Block":
+                    # Highlight Block (always) - structural
+                    if col_name == "Block":
                         cell.fill = LIGHT_BLUE_FILL
                         cell.font = Font(name="Arial", bold=True, size=10)
 
-                    # Rich orange/yellow cluster highlighting on LLDP sheet only
-                    # (Block column keeps its blue; other cells get cluster color for strong pair visibility)
-                    if is_lldp and cluster_val is not None and df.columns[c_idx-1] != "Block":
+                    # Cluster coloring ONLY on the actual mismatch pair columns (makes swapped rows pop without washing the whole sheet)
+                    if (is_lldp and cluster_val is not None and
+                            col_name != "Block" and col_name != "Cluster" and col_name != "PP_Enriched" and
+                            (col_name in lldp_pair_cols or any(k in str(col_name).lower() for k in ["expected", "b name", "b port", "lldp", "mismatch"]))):
                         try:
                             cid = int(cluster_val)
                             if cid % 2 == 0:
@@ -449,10 +537,21 @@ def build_workbook(enriched: Dict[str, pd.DataFrame], source_basename: str) -> T
                         except (ValueError, TypeError):
                             pass
 
-        # Auto width
+        # Auto width — sample a few data rows for better sizing on real data
         for c_idx, col in enumerate(df.columns, start=1):
-            width = min(50, max(10, len(str(col)) + 3))
-            ws.column_dimensions[get_column_letter(c_idx)].width = width
+            w = len(str(col)) + 2
+            # sample up to 5 data rows
+            for r in range(4, min(4 + 5, ws.max_row + 1)):
+                cell_val = ws.cell(row=r, column=c_idx).value
+                if cell_val:
+                    w = max(w, min(60, len(str(cell_val)) + 2))
+            ws.column_dimensions[get_column_letter(c_idx)].width = max(10, min(55, w))
+
+        # Usability: freeze header + first 3 cols (Block/Cluster/PP stay visible when scrolling)
+        ws.freeze_panes = "D4"
+        # AutoFilter on the whole table (header at row 3)
+        last_col = get_column_letter(len(df.columns))
+        ws.auto_filter.ref = f"A3:{last_col}{ws.max_row}"
 
     # Filename
     ts = datetime.now().strftime("%Y%m%d_%H%M")

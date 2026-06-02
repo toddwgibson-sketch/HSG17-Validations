@@ -30,8 +30,8 @@ st.caption("Clean implementation • DH block derivation from authoritative Boot
 
 st.markdown("""
 **Inputs (from Batam folder):**
-- `QFABT0toHOST_allconnections.xlsx` — the big raw connections file (PP labels + device/rack info)
-- `rack_validation_merged_2614HC8023.xlsx` — the pre-classified cutsheet with the 4 error sheets you already use
+- `QFABT0toHOST_allconnections.xlsx` — the big raw connections file (PP labels + device/rack info) — **required for PP enrichment + block derivation**
+- `rack_validation_merged_....xlsx` — the pre-classified cutsheet with the 4 error category sheets — **required**
 """)
 
 # ================== Uploaders ==================
@@ -48,13 +48,13 @@ with col1:
 
 with col2:
     cutsheet_file = st.file_uploader(
-        "Pre-classified Cutsheet (strongly recommended)",
+        "Pre-classified Cutsheet (required)",
         type=["xlsx", "xlsm"],
         key="hsg17_cutsheet",
-        help="rack_validation_merged_....xlsx — contains the 4 error category sheets"
+        help="rack_validation_merged_....xlsx — contains the 4 error category sheets (LLDP/Optic/FEC_BER/Interface)"
     )
 
-can_process = bool(allconn_file)
+can_process = bool(allconn_file) and bool(cutsheet_file)
 
 # ================== Process Button ==================
 if st.button("🚀 Process Files", type="primary", disabled=not can_process, key="hsg17_process"):

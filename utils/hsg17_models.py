@@ -56,6 +56,15 @@ RACK_TO_BLOCK: Dict[str, str] = {
     "58": "DH-102 (Spines)",
     "59": "DH-102 (Spines)",
     "60": "DH-102 (Spines)",
+    # 08xx/09xx racks in PG 3-6 (from Bootstrap Sequence)
+    "08": "DH-002",
+    "09": "DH-002",
+    # Additional common prefixes observed in HSG17 data (fall back to PP when possible;
+    # extend here for pure rack-based derivation without PP labels)
+    "25": "DH-101",
+    "28": "DH-103",
+    "29": "DH-103",
+    "30": "DH-104",
 }
 
 # Placement Group to DH (condensed authoritative mapping)

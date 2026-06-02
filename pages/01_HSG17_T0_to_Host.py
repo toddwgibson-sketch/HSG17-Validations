@@ -69,7 +69,7 @@ if st.button("🚀 Process Files", type="primary", disabled=not can_process, key
             )
 
             if result_bytes:
-                st.success("✅ Processing complete! (clean 6-stage pipeline + connected-component clustering + PP enrichment)")
+                st.success("✅ Processing complete! (Block derivation + clustering + full device/rack/elevation/PP/DMARC/Z/T1/History enrichment from allconnections + the pre-classified cutsheet columns)")
 
                 # ====================== PRE-DOWNLOAD PREVIEW (matches the QFAB_V2 pattern the user likes) ======================
                 st.subheader("📊 Pre-Download Analysis")
@@ -99,6 +99,30 @@ if st.button("🚀 Process Files", type="primary", disabled=not can_process, key
                     for i, (tab, count) in enumerate(tab_counts.items()):
                         with cols[i]:
                             st.metric(tab.replace(" Errors", ""), count)
+
+                # Show if enrichment actually added value (so user can see why the report changed or not)
+                if "LLDP Mismatch + Link Down" in wb_preview.sheetnames:
+                    lldp_ws = wb_preview["LLDP Mismatch + Link Down"]
+                    lldp_headers = [c.value for c in lldp_ws[3] if c.value]
+                    stats = []
+                    if "PP_Enriched" in lldp_headers:
+                        pp_idx = lldp_headers.index("PP_Enriched") + 1
+                        enriched = sum(1 for r in range(4, lldp_ws.max_row+1) if lldp_ws.cell(row=r, column=pp_idx).value and str(lldp_ws.cell(row=r, column=pp_idx).value).strip())
+                        stats.append(f"PP_Enriched on {enriched}/{max(1, lldp_ws.max_row-3)} LLDP rows")
+                    if "Block" in lldp_headers:
+                        b_idx = lldp_headers.index("Block") + 1
+                        uniq = sorted({str(lldp_ws.cell(row=r, column=b_idx).value) for r in range(4, lldp_ws.max_row+1) if lldp_ws.cell(row=r, column=b_idx).value})
+                        stats.append(f"Blocks: {', '.join(uniq[:4])}{'…' if len(uniq)>4 else ''}")
+                    if stats:
+                        st.caption(" | ".join(stats))
+                    # Mention if we pulled extra device info columns from allconnections
+                    allconn_headers = [h for h in lldp_headers if str(h).startswith('AllConn_')]
+                    if allconn_headers:
+                        st.caption(f'Pulled extra device info from allconnections: {", ".join(allconn_headers[:4])}')
+                    # The specific info user needs: Source_port (PP labels), Rack, Elevation, DMARC1/2, Z Rack/Elev, T1 info, Interface, History
+                    needed = [h for h in lldp_headers if h in ["Source_port", "Destination_port", "Rack", "Elevation", "DMARC1", "DMARC2", "Z Interface", "Z Rack", "Z Elevation", "Possible T1 Rack / U", "T1 Rack", "Possible T1 Port", "Interface", "History", "T0 Switch Port", "Cable Info"]]
+                    if needed:
+                        st.caption(f'Added from allconnections: {", ".join(needed)} (for context on each error)')
 
                 # ====================== SILENT CENTRAL LOGGING (exact pattern user approved) ======================
                 # No extra button. Happens automatically. Only warns on real failure.

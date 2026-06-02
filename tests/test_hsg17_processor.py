@@ -42,9 +42,10 @@ def make_allconnections_df() -> pd.DataFrame:
     rows = [
         # DH-002 via PP label
         {"DeviceA Name": "hsg17-q2-p3-cpu-01", "DeviceA Port": "Eth1/1", "DeviceB Name": "hsg17-q2-p3-t0-a", "DeviceB Port": "Eth1/1",
-         "Full Label": "PP.HSG17.3.DH2.R03.01-02", "EasyMark+ --- Patch Panels": "DH-002 / Rack 0807"},
+         "Full Label": "PP.HSG17.3.DH2.R03.01-02", "EasyMark+ --- Patch Panels": "DH-002 / Rack 0807", "T0 Switch": "t0-leaf-01", "Cable Type": "OM4", "Cable Info": "cable-foo",
+         "Rack A": "1009", "Elevation A": "3", "DMARC1": "DM1", "DMARC2": "DM2", "Z Rack": "9706", "Z Elevation": "9", "T1 Rack": "9706", "T1 Port": "swp13s0", "Interface": "swp31s0", "History": "initial", "Z Interface": "z-intf-foo", "T0 Switch Port": "t0p1"},
         {"DeviceA Name": "hsg17-q2-p3-cpu-02", "DeviceA Port": "Eth1/2", "DeviceB Name": "hsg17-q2-p3-t0-b", "DeviceB Port": "Eth1/2",
-         "Full Label": "SomeLabel DH-002 extra", "EasyMark+ --- Patch Panels": ""},
+         "Full Label": "SomeLabel DH-002 extra", "EasyMark+ --- Patch Panels": "", "T0 Switch": "t0-leaf-02"},
         # DH-102 spines via rack in name + PP
         {"DeviceA Name": "hsg17-q2-p1-gpu-tray-03", "DeviceA Port": "Eth1/3", "DeviceB Name": "hsg17-q2-p1-t1-spine", "DeviceB Port": "Eth1/3",
          "Full Label": "DH102-PP-01", "EasyMark+ --- Patch Panels": "QFABT1 DH-102"},
@@ -268,21 +269,36 @@ def test_full_pipeline_roundtrip():
     headers = [cell.value for cell in lldp[3]]
     assert "Block" in headers
     assert "Cluster" in headers
+    # New actionable columns added to make the report provide value (grouping + suggestion)
+    assert "Cluster Size" in headers
+    assert "Notes" in headers
+    # The info the user needs in each sheet: Source_port, Rack, Elevation, DMARC1/2, Z Rack/Elev, T1 info, Interface, History, plus AllConn_*
+    desired = ["Source_port", "Destination_port", "Rack", "Elevation", "Z_Interface", "T1_Rack", "Interface", "History", "T0 Switch Port", "Cable Info"]
+    for d in desired:
+        variants = [d, d.replace(' ', '_'), d.replace('_', ' ')]
+        found = any(v in headers or any(v in str(h) for h in headers) for v in variants)
+        assert found, f"Report must include {d} (or similar) from allconnections enrichment"
+    assert any(h.startswith("AllConn_") for h in headers), "Final report xlsx must include AllConn_* columns with device info from allconnections"
     # PP_Enriched may or may not appear depending on join success; we check it was attempted
     # (in our synthetic it should succeed for some rows)
     if "PP_Enriched" not in headers:
         # still ok if join didn't trigger for this run, but we will assert in enrichment-specific test
         pass
 
-    # Formatter polish: LLDP should be sorted by Cluster for grouped pairs, and have usability features
+    # Interface Down should have the full switch detection flag (value-add processing)
+    iface = wb["Interface Down Errors"]
+    iface_headers = [cell.value for cell in iface[3]]
+    assert "Full Switch Down?" in iface_headers or "A Device Down Count" in iface_headers
+
+    # Formatter polish: LLDP (and all error tabs) sorted by Block (primary for usability per sector), Cluster within block for pairs, plus freeze/filter
     assert lldp.freeze_panes == "D4"
     assert lldp.auto_filter.ref is not None and "A3:" in str(lldp.auto_filter.ref)
-    # Verify clusters appear grouped (non-decreasing)
-    cluster_vals = []
-    for row in lldp.iter_rows(min_row=4, max_col=2, values_only=True):
-        if row[1] is not None:
-            cluster_vals.append(row[1])
-    assert all(cluster_vals[i] <= cluster_vals[i+1] for i in range(len(cluster_vals)-1)), "LLDP clusters should be grouped after sort"
+    # Verify sorted by Block primarily (clusters grouped within blocks is secondary and tested in cluster_mismatches)
+    block_vals = []
+    for row in lldp.iter_rows(min_row=4, max_col=1, values_only=True):
+        if row[0] is not None:
+            block_vals.append(row[0])
+    assert all(block_vals[i] <= block_vals[i+1] or block_vals[i] == block_vals[i+1] for i in range(len(block_vals)-1) if block_vals[i] and block_vals[i+1]), "LLDP should be sorted by Block for report usability"
 
     # extract counts
     counts = extract_counts_for_logging(result_bytes)
@@ -309,6 +325,14 @@ def test_enrichment_and_pp_join():
     assert "Block" in lldp.columns
     assert "Cluster" in lldp.columns
     assert "PP_Enriched" in lldp.columns
+
+    # The info the user needs: Source_port, Rack, Elevation, Z/T1 info, History etc from allconnections
+    desired = ["Source_port", "Destination_port", "Rack", "Elevation", "Z_Interface", "T1_Rack", "Interface", "History", "T0 Switch Port", "Cable Info"]
+    for d in desired:
+        variants = [d, d.replace(' ', '_'), d.replace('_', ' ')]
+        found = any(v in lldp.columns or any(v in str(c) for c in lldp.columns) for v in variants)
+        assert found, f"Expected {d} (or similar) from allconnections enrichment"
+    assert any(c.startswith("AllConn_") for c in lldp.columns), "Expected AllConn_* device info columns from allconnections enrichment"
 
     # At least one row should have gotten a non-empty PP_Enriched from our synthetic allc
     non_empty = lldp["PP_Enriched"].astype(str).str.len() > 0

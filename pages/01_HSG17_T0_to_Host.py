@@ -19,7 +19,7 @@ st.caption("")
 st.markdown("""
 **Inputs:**
 - **LV Portal Validation Export** 
-- **Master Cutsheet(s) / Allconnections**: ation_port, EasyMark+, Physical Ports etc.).
+- **Master Cutsheet(s) / Allconnections**:
 
 
 

@@ -5,7 +5,7 @@ require_login()
 
 st.set_page_config(page_title="HSG17 Validations", layout="wide")
 st.title("HSG17 Validation Tools")
-st.caption("T1-to-T0 gold formatter (replacing old T0-to-Host) + retained Dashboard")
+st.caption("")
 
 st.markdown("""
 Welcome to the HSG17 validation toolkit.

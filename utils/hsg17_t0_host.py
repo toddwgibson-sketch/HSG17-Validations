@@ -1,16 +1,12 @@
 """
-HSG17 T0-to-Host / T1-to-T0 clean processor (6-stage architecture).
+HSG17 T0-to-Host / T1-to-T0 legacy processor.
 
-Stages (as designed):
-1. Ingest
-2. Normalize (block derivation is here)
-3. Enrich (attach ALL columns from matched allconnections row as AllConn_* + parsing for clean fields)
-4. Analyze (light clustering / grouping for rich output)
-5. Format (professional 5-tab workbook + Summary, with columns in target order + AllConn_ at end)
-6. Log (extract counts per DH block → central logger)
+This is the previous implementation (kept for reference only).
+The active page (`pages/01_HSG17_T0_to_Host.py`) now uses the gold T1-to-T0 formatter
+from `utils/t1_to_t0_formatter.py` (exact reference from lv_portal_formatter_T1toT0.v2)
+with Placement Group tracking (see hsg17_models.py) and logging compatibility for the Dashboard.
 
-This module is intentionally self-contained and testable.
-All columns from the (new simpler) allconnections will be in the output as requested.
+Do not use this module for new work.
 """
 
 from __future__ import annotations

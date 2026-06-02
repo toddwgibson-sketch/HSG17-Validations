@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-HSG17 Validation Dashboard
-Executive view for the HSG17 site.
-Current-state only (latest per Placement Group + category)
-"""
 
 import streamlit as st
 import pandas as pd
@@ -22,33 +17,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ====================== BEAUTIFUL C-SUITE STYLING ======================
-st.markdown("""
-<style>
-    .stApp .main-header,
-    .main-header {
-        font-size: 3.5rem !important;
-        font-weight: 700;
-        margin-bottom: 0.1rem;
-        line-height: 1.1;
-    }
-    .sub-header {
-        font-size: 1.05rem;
-        margin-bottom: 1.8rem;
-    }
-    .section-header {
-        font-size: 1.35rem;
-        font-weight: 600;
-        margin-top: 1.8rem;
-        margin-bottom: 0.6rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<p class="main-header">HSG17 Dashboard</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Current State • Placement Groups • Progress to Zero</p>', unsafe_allow_html=True)
-
-# ====================== DATA ======================
 DATA_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
 
 @st.cache_data(ttl=30)
@@ -64,15 +32,11 @@ def load_data():
 
 df = load_data()
 
-# Filter strictly to HSG17
 hsg17_df = df[df['hall'] == "HSG17"].copy()
 
 if hsg17_df.empty:
-    st.warning("No HSG17 data logged yet.")
-    st.info("Process files using the **HSG17 T0-to-Host** tool in this app to populate the dashboard with placement group data.")
     st.stop()
 
-# ====================== HELPER FUNCTIONS (current state + deltas) ======================
 def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Only the most recent entry per (building/placement group, error_category)."""
     if dataframe.empty:
@@ -116,11 +80,10 @@ def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
 current = get_latest_snapshot(hsg17_df)
 current_with_deltas = get_latest_with_deltas(hsg17_df)
 
-# Download button only (storage location info removed per request)
 if DATA_FILE.exists():
     with open(DATA_FILE, "rb") as f:
         st.download_button(
-            "📥 Download live validation_error_log.xlsx",
+            "",
             data=f,
             file_name="HSG17_validation_error_log.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -129,9 +92,6 @@ if DATA_FILE.exists():
 
 st.divider()
 
-# ====================== EXECUTIVE KPIs ======================
-st.markdown('<div class="section-header">Executive Snapshot</div>', unsafe_allow_html=True)
-
 col1, col2, col3, col4 = st.columns(4)
 
 total_errors = int(current['count'].sum())
@@ -139,20 +99,16 @@ unique_blocks = current['building'].nunique()
 active_rack_types = current['rack_type'].nunique()
 
 with col1:
-    st.metric("Total Open Issues (HSG17)", f"{total_errors:,}")
+    st.metric("", f"{total_errors:,}")
 with col2:
-    st.metric("Placement Groups with Issues", unique_blocks)
+    st.metric("", unique_blocks)
 with col3:
-    st.metric("Rack Types Active", active_rack_types)
+    st.metric("", active_rack_types)
 with col4:
-    st.metric("Last Updated", current['timestamp'].max().strftime("%Y-%m-%d %H:%M") if not current.empty else "—")
+    st.metric("", current['timestamp'].max().strftime("%Y-%m-%d %H:%M") if not current.empty else "—")
 
 st.divider()
 
-# ====================== ERROR BREAKDOWN BY PLACEMENT GROUP (the widget cards the user loves) ======================
-st.markdown('<div class="section-header">Error Breakdown by Placement Group</div>', unsafe_allow_html=True)
-
-# HSG17 category colors (professional)
 CAT_COLORS = {
     "LLDP Mismatch + Link Down": "#e74c3c",
     "Optic Errors": "#3498db",
@@ -193,10 +149,8 @@ if not current.empty:
                 total_delta = sum(valid_deltas) if valid_deltas else None
 
                 with st.container(border=True):
-                    # Placement Group name (now using PGxx from bootstrap sequence)
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
 
-                    # Big total + delta
                     total_str = str(bldg_total)
                     if pd.notna(total_delta):
                         delta_int = int(total_delta)
@@ -205,7 +159,6 @@ if not current.empty:
                         total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
                     st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{total_str}</div>", unsafe_allow_html=True)
 
-                    # Mini stacked bar
                     bar_data = []
                     for cat in category_order:
                         val = cat_current.get(cat, 0)
@@ -238,7 +191,6 @@ if not current.empty:
                         fig.update_traces(marker_line_width=0)
                         st.plotly_chart(fig, width="stretch", key=f"hsg17_bar_{bldg}", config={"displayModeBar": False})
 
-                    # Compact list with deltas
                     st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25'>", unsafe_allow_html=True)
                     for cat in category_order:
                         label = CAT_LABELS.get(cat, cat)
@@ -259,12 +211,9 @@ if not current.empty:
                         )
                     st.markdown("</div>", unsafe_allow_html=True)
 else:
-    st.info("No HSG17 placement group data yet. Run the T0-to-Host tool to start logging issues.")
+    st.stop()
 
 st.divider()
-
-# ====================== PIVOT TABLE ======================
-st.markdown('<div class="section-header">Errors by Category × Placement Group</div>', unsafe_allow_html=True)
 
 if not current.empty:
     pivot = (
@@ -290,11 +239,8 @@ if not current.empty:
         }
     )
 
-    # Simple bar of totals
     cat_totals = pivot.drop("TOTAL")["Total"].reset_index()
     cat_totals.columns = ["Category", "Errors"]
     fig = px.bar(cat_totals, x="Category", y="Errors", height=280)
     fig.update_layout(margin=dict(l=0, r=0, t=20, b=0))
     st.plotly_chart(fig, width="stretch", key="hsg17_cat_totals", config={"displayModeBar": False})
-
-st.caption("Data source: HSG17 validation_error_log.xlsx (inside this repo). Re-uploading the same placement groups overwrites previous counts — dashboard always shows current state.")

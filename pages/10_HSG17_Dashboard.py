@@ -102,18 +102,61 @@ st.markdown("""
         border-radius: 999px;
         box-shadow: 0 0 0 2px rgba(255,255,255,0.4);
     }
+    .progress {
+        margin: 4px 0 8px;
+        height: 3px;
+        background: rgba(255,255,255,0.25);
+        border-radius: 999px;
+        position: relative;
+    }
+    .progress-fill {
+        height: 3px;
+        background: rgba(255,255,255,0.95);
+        border-radius: 999px;
+    }
+    .progress-dot {
+        position: absolute;
+        top: -1.5px;
+        width: 6px;
+        height: 6px;
+        background: white;
+        border-radius: 999px;
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.4);
+    }
     .hsg17-metric-card .sub {
         font-size: 0.62rem;
         opacity: 0.65;
         margin-top: 3px;
     }
-    /* PG breakdown cards polish */
+    /* PG breakdown cards - now gradient like exec snapshot */
     .hsg17-pg-card {
+        border-radius: 14px;
+        padding: 12px 14px;
+        color: white;
+        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+        min-height: 140px;
+        position: relative;
+        overflow: hidden;
+        border: none;
+    }
+    .hsg17-pg-card .mini-bar {
+        margin: 6px 0;
+    }
+    /* Rack table panels */
+    .rack-panel {
         background: #1e2937;
         border: 1px solid #334155;
         border-radius: 10px;
-        padding: 10px 12px;
-        margin-bottom: 4px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
+    }
+    /* Bottom panels like the classic example */
+    .dashboard-panel {
+        background: #1e2937;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -330,6 +373,17 @@ CAT_LABELS = {
     "Interface Down Errors": "Interface Down",
 }
 
+# Gradient palette for PG cards, cycling to look like the exec snapshot cards
+GRADIENTS = [
+    ("#0ea5e9", "#0369a1"),  # blue
+    ("#f43f5e", "#9f1239"),  # rose
+    ("#f59e0b", "#c2410f"),  # orange
+    ("#a855f7", "#6b21a8"),  # purple
+    ("#10b981", "#047857"),  # green
+    ("#06b6d4", "#0e7490"),  # cyan
+    ("#8b5cf6", "#5b21b6"),  # violet
+]
+
 if not current.empty:
     building_order = sorted(current['building'].unique())
     CARDS_PER_ROW = 5
@@ -356,8 +410,10 @@ if not current.empty:
                 valid_deltas = [d for d in cat_delta.values() if pd.notna(d)]
                 total_delta = sum(valid_deltas) if valid_deltas else None
 
-                st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
-                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px; color:#e2e8f0;'>{bldg}</div>", unsafe_allow_html=True)
+                grad_idx = (start_idx + i) % len(GRADIENTS)
+                g1, g2 = GRADIENTS[grad_idx]
+                st.markdown(f'<div class="hsg17-pg-card" style="background: linear-gradient(135deg, {g1}, {g2});">', unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px; display:flex; justify-content:space-between; align-items:center;'><span>{bldg}</span><span style='font-size:1.3rem; opacity:0.85;'>🖥️</span></div>", unsafe_allow_html=True)
 
                 total_str = str(bldg_total)
                 if pd.notna(total_delta):
@@ -366,6 +422,15 @@ if not current.empty:
                     delta_color = "green" if delta_int < 0 else "red"
                     total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
+
+                # decorative progress bar similar to exec snapshot cards
+                prog_width = min(92, 40 + (hash(bldg) % 35))
+                st.markdown(f'''
+                <div class="progress">
+                    <div class="progress-fill" style="width:{prog_width}%;"></div>
+                    <div class="progress-dot" style="left:{prog_width}%;"></div>
+                </div>
+                ''', unsafe_allow_html=True)
 
                 bar_data = []
                 for cat in category_order:
@@ -395,13 +460,14 @@ if not current.empty:
                         yaxis_visible=False,
                         showlegend=False,
                         height=42,
-                        plot_bgcolor="#1e2937",
-                        paper_bgcolor="#1e2937"
+                        plot_bgcolor="rgba(255,255,255,0.12)",
+                        paper_bgcolor="rgba(255,255,255,0.06)",
+                        font_color="white"
                     )
                     fig.update_traces(marker_line_width=0)
                     st.plotly_chart(fig, width="stretch", key=f"hsg17_bar_{bldg}", config={"displayModeBar": False})
 
-                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#cbd5e1;'>", unsafe_allow_html=True)
+                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:rgba(255,255,255,0.9);'>", unsafe_allow_html=True)
                 for cat in category_order:
                     label = CAT_LABELS.get(cat, cat)
                     val = cat_current.get(cat, 0)
@@ -452,7 +518,8 @@ if not current.empty:
         sub_pivot = sub_pivot.sort_values("Total", ascending=False)
         sub_pivot.loc["TOTAL"] = sub_pivot.sum()
 
-        st.markdown(f"<div style='font-weight:600; color:#e0f2fe; margin: 6px 0 4px;'>{bldg}</div>", unsafe_allow_html=True)
+        st.markdown('<div class="rack-panel">', unsafe_allow_html=True)
+        st.markdown(f"<div style='font-weight:600; color:#e0f2fe; margin: 2px 0 6px;'>{bldg}</div>", unsafe_allow_html=True)
         st.dataframe(
             sub_pivot,
             width="stretch",
@@ -461,10 +528,11 @@ if not current.empty:
                 for col in sub_pivot.columns
             }
         )
+        st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
-# Progress Trend moved to bottom as requested
+# Progress Trend moved to bottom as requested - now in classic two-panel layout like the example
 st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
 
 if not filtered_df.empty:
@@ -477,45 +545,107 @@ if not filtered_df.empty:
     trend.columns = ['Run Time', 'Total Issues']
     trend = trend.sort_values('Run Time')
 
-    # Nicer combo look inspired by classic plotly dashboards (area + markers + line)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=trend['Run Time'],
-        y=trend['Total Issues'],
-        mode='lines+markers',
-        line=dict(color='#22d3ee', width=3, shape='spline'),
-        fill='tozeroy',
-        fillcolor='rgba(34, 211, 238, 0.18)',
-        marker=dict(size=7, color='#67e8f9', line=dict(width=1.5, color='#0b1120')),
-        name='Total Issues'
-    ))
-    fig.update_layout(
-        height=320,
-        margin=dict(l=0, r=0, t=8, b=0),
-        xaxis_title='Run Timestamp',
-        yaxis_title='Open Issues',
-        plot_bgcolor='#0b1120',
-        paper_bgcolor='#0b1120',
-        font_color='#e2e8f0',
-        xaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
-        yaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
-        hovermode='x unified'
-    )
-    fig.update_traces(hovertemplate='%{x}<br>%{y} issues<extra></extra>')
+    # Category summary for the right panel (from current snapshot for latest view)
+    cat_summary = current.groupby('error_category')['count'].sum().reset_index()
+    cat_summary = cat_summary[cat_summary['count'] > 0]
 
-    # Top right pill buttons to echo the plotly example (Export is real download)
-    btn_l, btn_r = st.columns([0.78, 0.22])
-    with btn_r:
-        bb1, bb2 = st.columns(2)
-        with bb1:
-            csv = trend.to_csv(index=False).encode('utf-8')
-            st.download_button("⤵ Export", data=csv, file_name="hsg17_trend.csv", mime="text/csv", key="trend_csv_dl", use_container_width=True)
-        with bb2:
-            if st.button("🖨 Print", key="trend_print", use_container_width=True):
-                st.toast("Use your browser's Print (Ctrl+P / ⌘P) — the chart will be included.")
+    # Two panels side-by-side to match the classic dashboard example
+    left_panel, right_panel = st.columns(2)
 
-    st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
+    with left_panel:
+        st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Issues Over Time (filtered runs)</div>", unsafe_allow_html=True)
+        # Trend chart - combo bar + line like the "Production" example
+        fig = go.Figure()
+        # Bars for each run (like production bars)
+        fig.add_trace(go.Bar(
+            x=trend['Run Time'],
+            y=trend['Total Issues'],
+            name='Issues per Run',
+            marker_color='#67e8f9',
+            opacity=0.7
+        ))
+        # Line + area on top (smooth trend)
+        fig.add_trace(go.Scatter(
+            x=trend['Run Time'],
+            y=trend['Total Issues'],
+            mode='lines+markers',
+            line=dict(color='#22d3ee', width=3, shape='spline'),
+            fill='tozeroy',
+            fillcolor='rgba(34, 211, 238, 0.15)',
+            marker=dict(size=6, color='#67e8f9', line=dict(width=1, color='#0b1120')),
+            name='Trend'
+        ))
+        fig.update_layout(
+            height=340,
+            margin=dict(l=0, r=0, t=8, b=0),
+            xaxis_title='Run Timestamp',
+            yaxis_title='Open Issues',
+            plot_bgcolor='#0b1120',
+            paper_bgcolor='#0b1120',
+            font_color='#e2e8f0',
+            xaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
+            yaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
+            hovermode='x unified',
+            barmode='overlay',
+            showlegend=False
+        )
+        fig.update_traces(hovertemplate='%{x}<br>%{y} issues<extra></extra>')
 
-    st.caption("Each point represents the total issues logged in one run of the T0-to-Host tool (within your current filters). Re-runs update the 'current' cards above but the full history stays in the log for trending.")
+        # Export / Print pills for this panel
+        tcols = st.columns([0.75, 0.25])
+        with tcols[1]:
+            bb1, bb2 = st.columns(2)
+            with bb1:
+                csv = trend.to_csv(index=False).encode('utf-8')
+                st.download_button("⤵", data=csv, file_name="hsg17_trend.csv", mime="text/csv", key="trend_csv_dl", use_container_width=True, help="Export trend data")
+            with bb2:
+                if st.button("🖨", key="trend_print", use_container_width=True, help="Print chart"):
+                    st.toast("Use browser Print (Ctrl+P)")
+        st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with right_panel:
+        st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Errors by Category (latest snapshot)</div>", unsafe_allow_html=True)
+        # Right panel: Category breakdown pie (visual like the map panel in the example)
+        if not cat_summary.empty:
+            # Use the CAT_COLORS for consistency
+            color_map = {cat: CAT_COLORS.get(cat, "#64748b") for cat in cat_summary['error_category']}
+            pie = px.pie(
+                cat_summary,
+                values='count',
+                names='error_category',
+                color='error_category',
+                color_discrete_map=color_map,
+                hole=0.4
+            )
+            pie.update_layout(
+                height=340,
+                margin=dict(l=0, r=0, t=8, b=0),
+                plot_bgcolor='#0b1120',
+                paper_bgcolor='#0b1120',
+                font_color='#e2e8f0',
+                showlegend=True,
+                legend=dict(orientation="v", y=0.5)
+            )
+            pie.update_traces(textposition='inside', textinfo='percent+label', hovertemplate='%{label}<br>%{value} issues (%{percent})<extra></extra>')
+
+            # Small export for category data
+            ccols = st.columns([0.75, 0.25])
+            with ccols[1]:
+                bb1, bb2 = st.columns(2)
+                with bb1:
+                    csv = cat_summary.to_csv(index=False).encode('utf-8')
+                    st.download_button("⤵", data=csv, file_name="hsg17_categories.csv", mime="text/csv", key="cat_csv_dl", use_container_width=True, help="Export category data")
+                with bb2:
+                    if st.button("🖨", key="cat_print", use_container_width=True, help="Print"):
+                        st.toast("Use browser Print (Ctrl+P)")
+            st.plotly_chart(pie, width="stretch", key="hsg17_category_pie", config={"displayModeBar": False})
+        else:
+            st.info("No category data")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.caption("Left: Total open issues over time (bars = per run, line/area = trend). Right: Latest breakdown by error category. Re-runs update the cards above; history is preserved for trends.")
 else:
     st.info("No data for trend chart with current filters.")

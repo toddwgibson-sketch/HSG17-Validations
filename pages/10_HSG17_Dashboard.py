@@ -207,7 +207,7 @@ if DATA_FILE.exists():
 
 st.divider()
 
-st.markdown('<div class="section-header">Executive Snapshot (respects sidebar filters)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Executive Snapshot</div>', unsafe_allow_html=True)
 
 col1, col2, col3, col4 = st.columns(4)
 

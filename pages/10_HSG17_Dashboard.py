@@ -334,7 +334,7 @@ else:
 
 st.divider()
 
-st.markdown('<div class="section-header">Errors by Category × Rack (per Placement Group, respects sidebar filters)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Errors by Category × Rack</div>', unsafe_allow_html=True)
 
 if not current.empty:
     # New design: one table per Placement Group
@@ -372,7 +372,7 @@ if not current.empty:
         )
         shown = True
     if not shown:
-        st.caption("No GPU-rack errors in the current filtered data. These tables only include racks that have the name 'GPU_GB300_NVL72_R.03' in your HSG17 - Placement Groups.txt file. Non-GPU racks (e.g. 3110 and other QFAB) are shown in the cards + breakdown above but are excluded here.")
+        st.caption("No GPU-rack errors in the current filtered data")
 else:
     st.caption("No data for the rack tables (see filters or ingest via the T1-to-T0 tool).")
 

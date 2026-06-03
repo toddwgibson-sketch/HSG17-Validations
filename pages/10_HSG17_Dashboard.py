@@ -137,6 +137,16 @@ st.markdown("""
         margin-bottom: 4px;
         box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 0 0 1px #22d3ee;
     }
+    .hsg17-pg-card .pg-pill {
+        background-color:#0f172a; 
+        border:2px solid #22d3ee; 
+        border-radius:9999px; 
+        padding:2px 8px; 
+        font-size:0.7rem; 
+        font-weight:500; 
+        color:#e0f2fe; 
+        letter-spacing:0.5px;
+    }
     /* Rack table panels */
     .rack-panel {
         background: #1e2937;
@@ -152,6 +162,29 @@ st.markdown("""
         border-radius: 12px;
         padding: 12px;
         margin-bottom: 8px;
+    }
+
+    /* Tone down bright red / harsh colors on sidebar filters (multiselect tags, date inputs) */
+    .stSidebar .stMultiSelect [data-baseweb="tag"] {
+        background-color: #1e3a8a !important;  /* muted blue to match dark theme */
+        color: #e0f2fe !important;
+        border: 1px solid #22d3ee !important;
+        border-radius: 999px !important;
+    }
+    .stSidebar .stMultiSelect [data-baseweb="tag"]:hover {
+        background-color: #1e40af !important;
+    }
+    .stSidebar .stMultiSelect [data-baseweb="tag"] > span {
+        color: #e0f2fe !important;
+    }
+    /* Date input focus to use cyan instead of red */
+    .stSidebar .stDateInput > div > div > div > input:focus {
+        border-color: #22d3ee !important;
+        box-shadow: 0 0 0 1px #22d3ee !important;
+    }
+    /* Mute sidebar filter labels and header for consistency */
+    .stSidebar .stMultiSelect label, .stSidebar .stDateInput label {
+        color: #94a3b8 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -430,8 +463,8 @@ if not current.empty:
 
             with cols[i]:
                 st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
-                # top dark rounded bar (the long dark rounded header like in the screenshot), with PG label as small pill inside left
-                st.markdown(f'<div style="background-color: #0f172a; border-radius: 9999px; padding: 4px 12px; margin-bottom: 8px; border: 1px solid #334155;"><span style="font-size: 0.7rem; font-weight: 500; color: #94a3b8; letter-spacing: 0.5px;">{bldg}</span></div>', unsafe_allow_html=True)
+                # PG label as a small cyan-outlined pill
+                st.markdown(f'<span class="pg-pill">{bldg}</span>', unsafe_allow_html=True)
 
                 # big number
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)

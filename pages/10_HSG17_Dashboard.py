@@ -89,7 +89,7 @@ with st.sidebar:
     st.header("🔍 Filters")
     all_buildings = sorted(hsg17_df['building'].unique())
     selected_buildings = st.multiselect(
-        "Placement Groups (Buildings)", 
+        "Placement Groups", 
         all_buildings, 
         default=all_buildings,
         help="Filter the view to specific Placement Groups (e.g. PG14 for rack 3110)"

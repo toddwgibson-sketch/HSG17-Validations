@@ -128,19 +128,14 @@ st.markdown("""
         opacity: 0.65;
         margin-top: 3px;
     }
-    /* PG breakdown cards - now gradient like exec snapshot */
+    /* PG breakdown cards - subtle outline around each to frame them similarly to the exec snapshot cards */
     .hsg17-pg-card {
-        border-radius: 14px;
+        background: #1e2937;
+        border: 2px solid #475569;
+        border-radius: 12px;
         padding: 12px 14px;
-        color: white;
-        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
-        min-height: 140px;
-        position: relative;
-        overflow: hidden;
-        border: none;
-    }
-    .hsg17-pg-card .mini-bar {
-        margin: 6px 0;
+        margin-bottom: 6px;
+        box-shadow: 0 0 0 1px #22d3ee, 0 4px 6px -1px rgb(0 0 0 / 0.1);
     }
     /* Rack table panels */
     .rack-panel {
@@ -373,17 +368,6 @@ CAT_LABELS = {
     "Interface Down Errors": "Interface Down",
 }
 
-# Gradient palette for PG cards, cycling to look like the exec snapshot cards
-GRADIENTS = [
-    ("#0ea5e9", "#0369a1"),  # blue
-    ("#f43f5e", "#9f1239"),  # rose
-    ("#f59e0b", "#c2410f"),  # orange
-    ("#a855f7", "#6b21a8"),  # purple
-    ("#10b981", "#047857"),  # green
-    ("#06b6d4", "#0e7490"),  # cyan
-    ("#8b5cf6", "#5b21b6"),  # violet
-]
-
 if not current.empty:
     building_order = sorted(current['building'].unique())
     CARDS_PER_ROW = 5
@@ -410,10 +394,8 @@ if not current.empty:
                 valid_deltas = [d for d in cat_delta.values() if pd.notna(d)]
                 total_delta = sum(valid_deltas) if valid_deltas else None
 
-                grad_idx = (start_idx + i) % len(GRADIENTS)
-                g1, g2 = GRADIENTS[grad_idx]
-                st.markdown(f'<div class="hsg17-pg-card" style="background: linear-gradient(135deg, {g1}, {g2});">', unsafe_allow_html=True)
-                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px; display:flex; justify-content:space-between; align-items:center;'><span>{bldg}</span><span style='font-size:1.3rem; opacity:0.85;'>🖥️</span></div>", unsafe_allow_html=True)
+                st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px; color:#e2e8f0;'>{bldg}</div>", unsafe_allow_html=True)
 
                 total_str = str(bldg_total)
                 if pd.notna(total_delta):
@@ -422,15 +404,6 @@ if not current.empty:
                     delta_color = "green" if delta_int < 0 else "red"
                     total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
-
-                # decorative progress bar similar to exec snapshot cards
-                prog_width = min(92, 40 + (hash(bldg) % 35))
-                st.markdown(f'''
-                <div class="progress">
-                    <div class="progress-fill" style="width:{prog_width}%;"></div>
-                    <div class="progress-dot" style="left:{prog_width}%;"></div>
-                </div>
-                ''', unsafe_allow_html=True)
 
                 bar_data = []
                 for cat in category_order:
@@ -460,14 +433,13 @@ if not current.empty:
                         yaxis_visible=False,
                         showlegend=False,
                         height=42,
-                        plot_bgcolor="rgba(255,255,255,0.12)",
-                        paper_bgcolor="rgba(255,255,255,0.06)",
-                        font_color="white"
+                        plot_bgcolor="#1e2937",
+                        paper_bgcolor="#1e2937"
                     )
                     fig.update_traces(marker_line_width=0)
                     st.plotly_chart(fig, width="stretch", key=f"hsg17_bar_{bldg}", config={"displayModeBar": False})
 
-                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:rgba(255,255,255,0.9);'>", unsafe_allow_html=True)
+                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#cbd5e1;'>", unsafe_allow_html=True)
                 for cat in category_order:
                     label = CAT_LABELS.get(cat, cat)
                     val = cat_current.get(cat, 0)

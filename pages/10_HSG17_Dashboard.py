@@ -49,7 +49,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<p class="main-header">HSG17 Dashboard</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Current State • Placement Groups • Progress to Zero</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header"></p>', unsafe_allow_html=True)
 
 DATA_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
 

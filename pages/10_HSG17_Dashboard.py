@@ -356,36 +356,6 @@ if not current.empty:
 
 st.divider()
 
-st.markdown('<div class="section-header">Current Issues Detail</div>', unsafe_allow_html=True)
-
-if not current.empty:
-    detail = current_with_deltas[['building', 'rack', 'error_category', 'current', 'previous', 'delta']].copy()
-    detail = detail.rename(columns={
-        'building': 'Placement Group',
-        'rack': 'Rack',
-        'error_category': 'Category',
-        'current': 'Current',
-        'previous': 'Previous',
-        'delta': 'Delta'
-    })
-    detail['Rack'] = detail['Rack'].fillna('').astype(str)
-    detail = detail.sort_values(['Placement Group', 'Category'])
-    st.dataframe(detail, width="stretch", hide_index=True, use_container_width=True)
-
-    # CSV export for the current filtered view
-    csv = detail.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        "📥 Download current filtered view (CSV)",
-        data=csv,
-        file_name="hsg17_current_issues.csv",
-        mime="text/csv",
-        width="stretch"
-    )
-else:
-    st.info("No current issues in filtered view.")
-
-st.divider()
-
 # Progress Trend moved to bottom as requested
 st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
 

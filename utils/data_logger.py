@@ -17,20 +17,32 @@ def ensure_log_exists():
         wb = Workbook()
         ws = wb.active
         ws.title = "Error Log"
-        headers = ["timestamp", "hall", "rack_type", "building", 
+        headers = ["timestamp", "hall", "rack_type", "building", "rack",
                    "error_category", "count", "source_file", "processed_by"]
         ws.append(headers)
         wb.save(LOG_FILE)
         wb.close()
         print(f"[DATA_LOGGER] Created new error log at: {abs_path}")
     else:
+        # Upgrade schema if 'rack' column missing (for backward compat with old logs)
+        try:
+            df = pd.read_excel(LOG_FILE)
+            if 'rack' not in df.columns:
+                # insert after 'building'
+                cols = list(df.columns)
+                idx = cols.index('building') + 1 if 'building' in cols else len(cols)
+                df.insert(idx, 'rack', '')
+                df.to_excel(LOG_FILE, index=False)
+                print(f"[DATA_LOGGER] Upgraded log schema with 'rack' column at: {abs_path}")
+        except Exception as e:
+            print(f"[DATA_LOGGER] Schema upgrade check failed: {e}")
         print(f"[DATA_LOGGER] Using existing error log at: {abs_path}")
 
-def log_errors(hall: str, rack_type: str, building: str, error_category: str, count: int,
+def log_errors(hall: str, rack_type: str, building: str, rack: str, error_category: str, count: int,
                source_file: str = "", processed_by: str = "system"):
     ensure_log_exists()
     abs_path = _get_abs_log_path()
-    print(f"[DATA_LOGGER] Logging: hall={hall}, rack_type={rack_type}, building={building}, category={error_category}, count={count}")
+    print(f"[DATA_LOGGER] Logging: hall={hall}, rack_type={rack_type}, building={building}, rack={rack}, category={error_category}, count={count}")
 
     from openpyxl import load_workbook, Workbook
 
@@ -45,13 +57,13 @@ def log_errors(hall: str, rack_type: str, building: str, error_category: str, co
                 wb = Workbook()
                 ws = wb.active
                 ws.title = "Error Log"
-                headers = ["timestamp", "hall", "rack_type", "building", 
+                headers = ["timestamp", "hall", "rack_type", "building", "rack",
                            "error_category", "count", "source_file", "processed_by"]
                 ws.append(headers)
 
             ws.append([
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                hall, rack_type, building, error_category, count, source_file, processed_by
+                hall, rack_type, building, rack, error_category, count, source_file, processed_by
             ])
             wb.save(LOG_FILE)
             print(f"[DATA_LOGGER] SUCCESS - Logged to: {abs_path}")

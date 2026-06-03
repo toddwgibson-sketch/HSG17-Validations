@@ -75,6 +75,7 @@ if run_btn and lv_file and cutsheet_files:
             try:
                 source_name = lv_file.name if lv_file else "unknown"
                 placement = "PG14"
+                rack = "3110"
                 try:
                     import pandas as pd
                     import re
@@ -100,6 +101,9 @@ if run_btn and lv_file and cutsheet_files:
                             most_common = Counter(pgs).most_common(1)[0][0]
                             if most_common and most_common.startswith('PG'):
                                 placement = most_common
+                            most_common_rack = Counter(rack_nums).most_common(1)[0][0]
+                            if most_common_rack:
+                                rack = most_common_rack
                 except Exception as e:
                     pass
                 for cat_key, cnt in counts.items():
@@ -115,6 +119,7 @@ if run_btn and lv_file and cutsheet_files:
                             hall="HSG17",
                             rack_type="T1-T0",
                             building=placement,
+                            rack=rack,
                             error_category=cat_name,
                             count=int(cnt),
                             source_file=source_name,

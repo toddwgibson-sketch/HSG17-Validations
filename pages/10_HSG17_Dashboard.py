@@ -45,7 +45,7 @@ DATA_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
 def load_data():
     if not DATA_FILE.exists():
         return pd.DataFrame(columns=[
-            "timestamp", "hall", "rack_type", "building", 
+            "timestamp", "hall", "rack_type", "building", "rack",
             "error_category", "count", "source_file", "processed_by"
         ])
     df = pd.read_excel(DATA_FILE)
@@ -113,7 +113,7 @@ def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
 def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Current vs previous run + delta for each placement group+category."""
     if dataframe.empty:
-        return pd.DataFrame(columns=['hall', 'building', 'error_category', 'current', 'previous', 'delta'])
+        return pd.DataFrame(columns=['hall', 'building', 'error_category', 'rack', 'current', 'previous', 'delta'])
 
     records = []
     for (hall, bldg, cat), group in dataframe.sort_values('timestamp').groupby(['hall', 'building', 'error_category']):
@@ -130,10 +130,13 @@ def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
         if pd.isna(delta):
             delta = None
 
+        rack = str(group.iloc[-1].get('rack', '')) if 'rack' in group.columns else ''
+
         records.append({
             'hall': hall,
             'building': bldg,
             'error_category': cat,
+            'rack': rack,
             'current': current,
             'previous': previous,
             'delta': delta
@@ -344,9 +347,10 @@ st.divider()
 st.markdown('<div class="section-header">Current Issues Detail</div>', unsafe_allow_html=True)
 
 if not current.empty:
-    detail = current[['building', 'error_category', 'current', 'previous', 'delta']].copy()
+    detail = current_with_deltas[['building', 'rack', 'error_category', 'current', 'previous', 'delta']].copy()
     detail = detail.rename(columns={
         'building': 'Placement Group',
+        'rack': 'Rack',
         'error_category': 'Category',
         'current': 'Current',
         'previous': 'Previous',

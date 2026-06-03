@@ -128,14 +128,14 @@ st.markdown("""
         opacity: 0.65;
         margin-top: 3px;
     }
-    /* PG breakdown cards - subtle outline around each to frame them similarly to the exec snapshot cards */
+    /* PG breakdown cards - outline all the way around each card (like exec snapshot cards) */
     .hsg17-pg-card {
         background: #1e2937;
-        border: 2px solid #475569;
-        border-radius: 12px;
-        padding: 12px 14px;
-        margin-bottom: 6px;
-        box-shadow: 0 0 0 1px #22d3ee, 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        border: 2px solid #64748b;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 4px;
+        box-shadow: 0 0 0 3px #0ea5e9;
     }
     /* Rack table panels */
     .rack-panel {
@@ -376,88 +376,80 @@ if not current.empty:
 
     for start_idx in range(0, len(building_order), CARDS_PER_ROW):
         row_buildings = building_order[start_idx : start_idx + CARDS_PER_ROW]
+
         cols = st.columns(CARDS_PER_ROW)
 
         for i, bldg in enumerate(row_buildings):
+            bldg_deltas = current_with_deltas[current_with_deltas['building'] == bldg]
+
+            cat_current = {}
+            cat_delta = {}
+            for _, row in bldg_deltas.iterrows():
+                cat = row['error_category']
+                cat_current[cat] = row['current']
+                cat_delta[cat] = row['delta']
+
+            bldg_total = sum(cat_current.values())
+
+            valid_deltas = [d for d in cat_delta.values() if pd.notna(d)]
+            total_delta = sum(valid_deltas) if valid_deltas else None
+
+            total_str = str(bldg_total)
+            if pd.notna(total_delta):
+                delta_int = int(total_delta)
+                delta_sign = f"({delta_int:+d})" if delta_int != 0 else ""
+                delta_color = "green" if delta_int < 0 else "red"
+                total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
+
+            bar_data = []
+            for cat in category_order:
+                val = cat_current.get(cat, 0)
+                if val > 0:
+                    bar_data.append({
+                        "Category": CAT_LABELS.get(cat, cat),
+                        "Count": val,
+                        "Color": CAT_COLORS.get(cat, "#7f8c8d")
+                    })
+
+            # build list html (to be inside the card)
+            list_html = "<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#cbd5e1;'>"
+            for cat in category_order:
+                label = CAT_LABELS.get(cat, cat)
+                val = cat_current.get(cat, 0)
+                d = cat_delta.get(cat)
+                color = CAT_COLORS.get(cat, "#7f8c8d")
+
+                delta_html = ""
+                if pd.notna(d):
+                    d_int = int(d)
+                    delta_color = "green" if d_int < 0 else "red"
+                    delta_str = f"({d_int:+d})"
+                    delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
+
+                list_html += f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>{delta_html}<br>"
+            list_html += "</div>"
+
             with cols[i]:
-                bldg_deltas = current_with_deltas[current_with_deltas['building'] == bldg]
-
-                cat_current = {}
-                cat_delta = {}
-                for _, row in bldg_deltas.iterrows():
-                    cat = row['error_category']
-                    cat_current[cat] = row['current']
-                    cat_delta[cat] = row['delta']
-
-                bldg_total = sum(cat_current.values())
-
-                valid_deltas = [d for d in cat_delta.values() if pd.notna(d)]
-                total_delta = sum(valid_deltas) if valid_deltas else None
-
                 st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
-                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px; color:#e2e8f0;'>{bldg}</div>", unsafe_allow_html=True)
+                # PG name pill (dark rounded top bar)
+                st.markdown(f'<div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 9999px; padding: 3px 10px; display: inline-block; margin-bottom: 6px;"><span style="font-size: 0.7rem; font-weight: 500; color: #94a3b8; letter-spacing: 0.5px;">{bldg}</span></div>', unsafe_allow_html=True)
 
-                total_str = str(bldg_total)
-                if pd.notna(total_delta):
-                    delta_int = int(total_delta)
-                    delta_sign = f"({delta_int:+d})" if delta_int != 0 else ""
-                    delta_color = "green" if delta_int < 0 else "red"
-                    total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
+                # big number
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
-                bar_data = []
-                for cat in category_order:
-                    val = cat_current.get(cat, 0)
-                    if val > 0:
-                        bar_data.append({
-                            "Category": CAT_LABELS.get(cat, cat),
-                            "Count": val,
-                            "Color": CAT_COLORS.get(cat, "#7f8c8d")
-                        })
-
+                # rounded bar (HTML)
                 if bar_data:
-                    bar_df = pd.DataFrame(bar_data)
-                    fig = px.bar(
-                        bar_df,
-                        x="Count",
-                        y=[""] * len(bar_df),
-                        color="Category",
-                        orientation="h",
-                        color_discrete_map={d["Category"]: d["Color"] for d in bar_data},
-                        height=42
-                    )
-                    fig.update_layout(
-                        barmode="stack",
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        xaxis_visible=False,
-                        yaxis_visible=False,
-                        showlegend=False,
-                        height=42,
-                        plot_bgcolor="#1e2937",
-                        paper_bgcolor="#1e2937"
-                    )
-                    fig.update_traces(marker_line_width=0)
-                    st.plotly_chart(fig, width="stretch", key=f"hsg17_bar_{bldg}", config={"displayModeBar": False})
+                    total_for_bar = sum(d['Count'] for d in bar_data)
+                    bar_html = '<div style="height:16px; background:#0f172a; border-radius:999px; overflow:hidden; display:flex; margin:4px 0 6px; border:1px solid #334155;">'
+                    for d in bar_data:
+                        pct = (d['Count'] / total_for_bar * 100) if total_for_bar > 0 else 0
+                        bar_html += f'<div style="width:{pct}%; background:{d["Color"]}; height:100%;"></div>'
+                    bar_html += '</div>'
+                    st.markdown(bar_html, unsafe_allow_html=True)
 
-                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#cbd5e1;'>", unsafe_allow_html=True)
-                for cat in category_order:
-                    label = CAT_LABELS.get(cat, cat)
-                    val = cat_current.get(cat, 0)
-                    d = cat_delta.get(cat)
-                    color = CAT_COLORS.get(cat, "#7f8c8d")
+                # the list inside the card so outline goes all the way around
+                st.markdown(list_html, unsafe_allow_html=True)
 
-                    delta_html = ""
-                    if pd.notna(d):
-                        d_int = int(d)
-                        delta_color = "green" if d_int < 0 else "red"
-                        delta_str = f"({d_int:+d})"
-                        delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
-
-                    st.markdown(
-                        f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>{delta_html}",
-                        unsafe_allow_html=True
-                    )
-                st.markdown("</div>", unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("No matching Placement Group data after filters. Try broadening your sidebar selections.")

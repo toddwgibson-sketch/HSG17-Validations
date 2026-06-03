@@ -58,6 +58,46 @@ hsg17_df = df[df['hall'] == "HSG17"].copy()
 
 if hsg17_df.empty:
     st.warning("No HSG17 data logged yet.")
+    st.info("Run the T0-to-Host tool (in the other tab) to log some issues from an LV export + cutsheets. The dashboard will then show current state + deltas per Placement Group.")
+    st.stop()
+
+# --- Sidebar Filters (more interactive development for the dashboard) ---
+with st.sidebar:
+    st.header("🔍 Filters")
+    all_buildings = sorted(hsg17_df['building'].unique())
+    selected_buildings = st.multiselect(
+        "Placement Groups (Buildings)", 
+        all_buildings, 
+        default=all_buildings,
+        help="Filter the view to specific Placement Groups (e.g. PG14 for rack 3110)"
+    )
+    all_cats = sorted(hsg17_df['error_category'].unique())
+    selected_cats = st.multiselect(
+        "Error Categories", 
+        all_cats, 
+        default=all_cats
+    )
+
+    min_date = hsg17_df['timestamp'].min().date()
+    max_date = hsg17_df['timestamp'].max().date()
+    date_range = st.date_input(
+        "Consider logs from / to",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+        help="Only include log entries within this date range when computing current state and deltas."
+    )
+
+# Apply filters to the raw log data before computing snapshots/deltas
+filtered_df = hsg17_df[
+    hsg17_df['building'].isin(selected_buildings) &
+    hsg17_df['error_category'].isin(selected_cats) &
+    (hsg17_df['timestamp'].dt.date >= date_range[0]) &
+    (hsg17_df['timestamp'].dt.date <= date_range[1])
+].copy()
+
+if filtered_df.empty:
+    st.warning("No data matches the current filters. Adjust the Placement Groups, Categories or Date Range in the sidebar.")
     st.stop()
 
 def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -100,8 +140,8 @@ def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
         })
     return pd.DataFrame(records)
 
-current = get_latest_snapshot(hsg17_df)
-current_with_deltas = get_latest_with_deltas(hsg17_df)
+current = get_latest_snapshot(filtered_df)
+current_with_deltas = get_latest_with_deltas(filtered_df)
 
 if DATA_FILE.exists():
     with open(DATA_FILE, "rb") as f:
@@ -113,9 +153,32 @@ if DATA_FILE.exists():
             width="stretch"
         )
 
+# Reset button for dashboard data (user requested for clearing test data)
+if st.button("🗑️ Reset Dashboard Data (clear HSG17 log)", type="secondary", help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
+    try:
+        if DATA_FILE.exists():
+            df = pd.read_excel(DATA_FILE)
+            if 'hall' in df.columns:
+                df_clean = df[df['hall'] != "HSG17"].copy()
+            else:
+                df_clean = df.copy()
+            if df_clean.empty:
+                # Recreate with proper headers
+                df_clean = pd.DataFrame(columns=[
+                    "timestamp", "hall", "rack_type", "building", 
+                    "error_category", "count", "source_file", "processed_by"
+                ])
+            df_clean.to_excel(DATA_FILE, index=False)
+            st.success("HSG17 dashboard data has been cleared. The page will refresh with empty state.")
+            st.rerun()
+        else:
+            st.info("No data file found to clear.")
+    except Exception as e:
+        st.error(f"Failed to clear data: {e}")
+
 st.divider()
 
-st.markdown('<div class="section-header">Executive Snapshot</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Executive Snapshot (respects sidebar filters)</div>', unsafe_allow_html=True)
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -134,7 +197,7 @@ with col4:
 
 st.divider()
 
-st.markdown('<div class="section-header">Error Breakdown by Placement Group</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Error Breakdown by Placement Group (respects sidebar filters)</div>', unsafe_allow_html=True)
 
 CAT_COLORS = {
     "LLDP Mismatch + Link Down": "#e74c3c",
@@ -238,11 +301,46 @@ if not current.empty:
                         )
                     st.markdown("</div>", unsafe_allow_html=True)
 else:
-    pass
+    st.info("No matching Placement Group data after filters. Try broadening your sidebar selections.")
 
 st.divider()
 
-st.markdown('<div class="section-header">Errors by Category × Placement Group</div>', unsafe_allow_html=True)
+# New development: Trend chart for "Progress to Zero" visibility over historical runs
+st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
+
+if not filtered_df.empty:
+    # Aggregate total issues per logged run time (using the raw filtered log entries)
+    trend = (
+        filtered_df.groupby(filtered_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M'))['count']
+        .sum()
+        .reset_index()
+    )
+    trend.columns = ['Run Time', 'Total Issues']
+    trend = trend.sort_values('Run Time')
+
+    fig = px.line(
+        trend, 
+        x='Run Time', 
+        y='Total Issues', 
+        markers=True,
+        title='Total Open Issues per Processing Run (filtered view)'
+    )
+    fig.update_layout(
+        height=320, 
+        margin=dict(l=0, r=0, t=30, b=0),
+        xaxis_title='Run Timestamp',
+        yaxis_title='Sum of Counts (all categories)'
+    )
+    fig.update_traces(line=dict(width=3))
+    st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
+
+    st.caption("Each point represents the total issues logged in one run of the T0-to-Host tool (within your current filters). Re-runs update the 'current' cards above but the full history stays in the log for trending.")
+else:
+    st.info("No data for trend chart with current filters.")
+
+st.divider()
+
+st.markdown('<div class="section-header">Errors by Category × Placement Group (respects sidebar filters)</div>', unsafe_allow_html=True)
 
 if not current.empty:
     pivot = (

@@ -24,7 +24,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.utils import get_column_letter
 
-from utils.hsg17_models import normalize_block, PG_TO_DH, RACK_TO_BLOCK
+from .hsg17_models import normalize_block, PG_TO_DH, RACK_TO_BLOCK
 
 
 def parse_label_fields(label_str: str) -> dict:

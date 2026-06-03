@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path for "from utils.xxx" when this page
+# is exec'd by st.navigation (fixes ImportError on Streamlit Cloud).
+_here = Path(__file__).resolve()
+_root = _here.parent.parent if _here.parent.name == "pages" else _here.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px

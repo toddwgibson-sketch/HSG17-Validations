@@ -13,6 +13,7 @@ if str(_root) not in sys.path:
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
 
@@ -28,22 +29,91 @@ st.set_page_config(
 # ====================== BEAUTIFUL C-SUITE STYLING ======================
 st.markdown("""
 <style>
+    .stApp {
+        background-color: #0b1120 !important;
+    }
     .stApp .main-header,
     .main-header {
-        font-size: 3.5rem !important;
+        font-size: 3.2rem !important;
         font-weight: 700;
         margin-bottom: 0.1rem;
         line-height: 1.1;
+        color: #f1f5f9;
     }
     .sub-header {
-        font-size: 1.05rem;
-        margin-bottom: 1.8rem;
+        font-size: 1.0rem;
+        margin-bottom: 1.2rem;
+        color: #94a3b8;
     }
     .section-header {
-        font-size: 1.35rem;
+        font-size: 1.25rem;
         font-weight: 600;
-        margin-top: 1.8rem;
-        margin-bottom: 0.6rem;
+        margin-top: 1.4rem;
+        margin-bottom: 0.5rem;
+        color: #e2e8f0;
+        border-left: 4px solid #22d3ee;
+        padding-left: 10px;
+    }
+    /* Fancy metric cards */
+    .hsg17-metric-card {
+        border-radius: 14px;
+        padding: 16px 18px;
+        color: white;
+        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+        min-height: 118px;
+        position: relative;
+        overflow: hidden;
+    }
+    .hsg17-metric-card .label {
+        font-size: 0.72rem;
+        opacity: 0.85;
+        font-weight: 500;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+    }
+    .hsg17-metric-card .value {
+        font-size: 1.95rem;
+        font-weight: 700;
+        line-height: 1.05;
+        margin-top: 2px;
+    }
+    .hsg17-metric-card .icon {
+        font-size: 1.9rem;
+        opacity: 0.85;
+    }
+    .hsg17-metric-card .progress {
+        margin-top: 10px;
+        height: 3px;
+        background: rgba(255,255,255,0.22);
+        border-radius: 999px;
+        position: relative;
+    }
+    .hsg17-metric-card .progress-fill {
+        height: 3px;
+        background: rgba(255,255,255,0.95);
+        border-radius: 999px;
+    }
+    .hsg17-metric-card .progress-dot {
+        position: absolute;
+        top: -1.5px;
+        width: 6px;
+        height: 6px;
+        background: white;
+        border-radius: 999px;
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.4);
+    }
+    .hsg17-metric-card .sub {
+        font-size: 0.62rem;
+        opacity: 0.65;
+        margin-top: 3px;
+    }
+    /* PG breakdown cards polish */
+    .hsg17-pg-card {
+        background: #1e2937;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -214,15 +284,34 @@ col1, col2, col3, col4 = st.columns(4)
 total_errors = int(current['count'].sum())
 unique_blocks = current['building'].nunique()
 active_rack_types = current['rack_type'].nunique()
+last_ts = current['timestamp'].max().strftime("%Y-%m-%d %H:%M") if not current.empty else "—"
+
+def _metric_card(label, value, icon, c1, c2, sub=""):
+    return f'''
+    <div class="hsg17-metric-card" style="background: linear-gradient(135deg, {c1}, {c2});">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+                <div class="label">{label}</div>
+                <div class="value">{value}</div>
+            </div>
+            <div class="icon">{icon}</div>
+        </div>
+        <div class="progress">
+            <div class="progress-fill" style="width: {min(92, 35 + (hash(str(value)) % 40))}%;"></div>
+            <div class="progress-dot" style="left: {min(92, 35 + (hash(str(value)) % 40))}%;"></div>
+        </div>
+        <div class="sub">{sub}</div>
+    </div>
+    '''
 
 with col1:
-    st.metric("Total Open Issues (HSG17)", f"{total_errors:,}")
+    st.markdown(_metric_card("TOTAL OPEN ISSUES (HSG17)", f"{total_errors:,}", "⚠️", "#0ea5e9", "#0369a1", "Current snapshot • filtered"), unsafe_allow_html=True)
 with col2:
-    st.metric("Placement Groups with Issues", unique_blocks)
+    st.markdown(_metric_card("PLACEMENT GROUPS WITH ISSUES", str(unique_blocks), "📍", "#f43f5e", "#9f1239", "Active PGs in view"), unsafe_allow_html=True)
 with col3:
-    st.metric("Rack Types Active", active_rack_types)
+    st.markdown(_metric_card("RACK TYPES ACTIVE", str(active_rack_types), "🖥️", "#f59e0b", "#c2410f", "Unique rack types"), unsafe_allow_html=True)
 with col4:
-    st.metric("Last Updated", current['timestamp'].max().strftime("%Y-%m-%d %H:%M") if not current.empty else "—")
+    st.markdown(_metric_card("LAST UPDATED", last_ts, "🕒", "#a855f7", "#6b21a8", "Latest processing run"), unsafe_allow_html=True)
 
 st.divider()
 
@@ -267,68 +356,71 @@ if not current.empty:
                 valid_deltas = [d for d in cat_delta.values() if pd.notna(d)]
                 total_delta = sum(valid_deltas) if valid_deltas else None
 
-                with st.container(border=True):
-                    st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
+                st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px; color:#e2e8f0;'>{bldg}</div>", unsafe_allow_html=True)
 
-                    total_str = str(bldg_total)
-                    if pd.notna(total_delta):
-                        delta_int = int(total_delta)
-                        delta_sign = f"({delta_int:+d})" if delta_int != 0 else ""
-                        delta_color = "green" if delta_int < 0 else "red"
-                        total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
-                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{total_str}</div>", unsafe_allow_html=True)
+                total_str = str(bldg_total)
+                if pd.notna(total_delta):
+                    delta_int = int(total_delta)
+                    delta_sign = f"({delta_int:+d})" if delta_int != 0 else ""
+                    delta_color = "green" if delta_int < 0 else "red"
+                    total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
+                st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
-                    bar_data = []
-                    for cat in category_order:
-                        val = cat_current.get(cat, 0)
-                        if val > 0:
-                            bar_data.append({
-                                "Category": CAT_LABELS.get(cat, cat),
-                                "Count": val,
-                                "Color": CAT_COLORS.get(cat, "#7f8c8d")
-                            })
+                bar_data = []
+                for cat in category_order:
+                    val = cat_current.get(cat, 0)
+                    if val > 0:
+                        bar_data.append({
+                            "Category": CAT_LABELS.get(cat, cat),
+                            "Count": val,
+                            "Color": CAT_COLORS.get(cat, "#7f8c8d")
+                        })
 
-                    if bar_data:
-                        bar_df = pd.DataFrame(bar_data)
-                        fig = px.bar(
-                            bar_df,
-                            x="Count",
-                            y=[""] * len(bar_df),
-                            color="Category",
-                            orientation="h",
-                            color_discrete_map={d["Category"]: d["Color"] for d in bar_data},
-                            height=42
-                        )
-                        fig.update_layout(
-                            barmode="stack",
-                            margin=dict(l=0, r=0, t=0, b=0),
-                            xaxis_visible=False,
-                            yaxis_visible=False,
-                            showlegend=False,
-                            height=42
-                        )
-                        fig.update_traces(marker_line_width=0)
-                        st.plotly_chart(fig, width="stretch", key=f"hsg17_bar_{bldg}", config={"displayModeBar": False})
+                if bar_data:
+                    bar_df = pd.DataFrame(bar_data)
+                    fig = px.bar(
+                        bar_df,
+                        x="Count",
+                        y=[""] * len(bar_df),
+                        color="Category",
+                        orientation="h",
+                        color_discrete_map={d["Category"]: d["Color"] for d in bar_data},
+                        height=42
+                    )
+                    fig.update_layout(
+                        barmode="stack",
+                        margin=dict(l=0, r=0, t=0, b=0),
+                        xaxis_visible=False,
+                        yaxis_visible=False,
+                        showlegend=False,
+                        height=42,
+                        plot_bgcolor="#1e2937",
+                        paper_bgcolor="#1e2937"
+                    )
+                    fig.update_traces(marker_line_width=0)
+                    st.plotly_chart(fig, width="stretch", key=f"hsg17_bar_{bldg}", config={"displayModeBar": False})
 
-                    st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25'>", unsafe_allow_html=True)
-                    for cat in category_order:
-                        label = CAT_LABELS.get(cat, cat)
-                        val = cat_current.get(cat, 0)
-                        d = cat_delta.get(cat)
-                        color = CAT_COLORS.get(cat, "#7f8c8d")
+                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#cbd5e1;'>", unsafe_allow_html=True)
+                for cat in category_order:
+                    label = CAT_LABELS.get(cat, cat)
+                    val = cat_current.get(cat, 0)
+                    d = cat_delta.get(cat)
+                    color = CAT_COLORS.get(cat, "#7f8c8d")
 
-                        delta_html = ""
-                        if pd.notna(d):
-                            d_int = int(d)
-                            delta_color = "green" if d_int < 0 else "red"
-                            delta_str = f"({d_int:+d})"
-                            delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
+                    delta_html = ""
+                    if pd.notna(d):
+                        d_int = int(d)
+                        delta_color = "green" if d_int < 0 else "red"
+                        delta_str = f"({d_int:+d})"
+                        delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
 
-                        st.markdown(
-                            f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>{delta_html}",
-                            unsafe_allow_html=True
-                        )
-                    st.markdown("</div>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>{delta_html}",
+                        unsafe_allow_html=True
+                    )
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("No matching Placement Group data after filters. Try broadening your sidebar selections.")
 
@@ -339,8 +431,7 @@ st.markdown('<div class="section-header">Errors by Category × Rack (per Placeme
 if not current.empty:
     # New design: one table per Placement Group
     # rows: error_category, columns: rack (within the PG)
-    # Only GPU racks per HSG17 - Placement Groups.txt (SKU GPU_GB300_NVL72_R.03)
-    shown = False
+    # Only GPU racks (from your HSG17 - Placement Groups.txt)
     for bldg in sorted(current['building'].dropna().unique()):
         sub = current[current['building'] == bldg]
         if 'rack' in sub.columns:
@@ -361,7 +452,7 @@ if not current.empty:
         sub_pivot = sub_pivot.sort_values("Total", ascending=False)
         sub_pivot.loc["TOTAL"] = sub_pivot.sum()
 
-        st.markdown(f"**{bldg}**")
+        st.markdown(f"<div style='font-weight:600; color:#e0f2fe; margin: 6px 0 4px;'>{bldg}</div>", unsafe_allow_html=True)
         st.dataframe(
             sub_pivot,
             width="stretch",
@@ -370,11 +461,6 @@ if not current.empty:
                 for col in sub_pivot.columns
             }
         )
-        shown = True
-    if not shown:
-        st.caption("No GPU-rack errors in the current filtered data. These tables only include racks that have the name 'GPU_GB300_NVL72_R.03' in your HSG17 - Placement Groups.txt file. Non-GPU racks (e.g. 3110 and other QFAB) are shown in the cards + breakdown above but are excluded here.")
-else:
-    st.caption("No data for the rack tables (see filters or ingest via the T1-to-T0 tool).")
 
 st.divider()
 
@@ -391,21 +477,44 @@ if not filtered_df.empty:
     trend.columns = ['Run Time', 'Total Issues']
     trend = trend.sort_values('Run Time')
 
-    fig = px.line(
-        trend, 
-        x='Run Time', 
-        y='Total Issues', 
-        markers=True,
-        title='Total Open Issues per Processing Run (filtered view)'
-    )
+    # Nicer combo look inspired by classic plotly dashboards (area + markers + line)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=trend['Run Time'],
+        y=trend['Total Issues'],
+        mode='lines+markers',
+        line=dict(color='#22d3ee', width=3, shape='spline'),
+        fill='tozeroy',
+        fillcolor='rgba(34, 211, 238, 0.18)',
+        marker=dict(size=7, color='#67e8f9', line=dict(width=1.5, color='#0b1120')),
+        name='Total Issues'
+    ))
     fig.update_layout(
-        height=320, 
-        margin=dict(l=0, r=0, t=30, b=0),
+        height=320,
+        margin=dict(l=0, r=0, t=8, b=0),
         xaxis_title='Run Timestamp',
-        yaxis_title='Sum of Counts (all categories)'
+        yaxis_title='Open Issues',
+        plot_bgcolor='#0b1120',
+        paper_bgcolor='#0b1120',
+        font_color='#e2e8f0',
+        xaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
+        yaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
+        hovermode='x unified'
     )
-    fig.update_traces(line=dict(width=3))
-    st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
+    fig.update_traces(hovertemplate='%{x}<br>%{y} issues<extra></extra>')
+
+    # Top right pill buttons to echo the plotly example (Export is real download)
+    btn_l, btn_r = st.columns([0.78, 0.22])
+    with btn_r:
+        bb1, bb2 = st.columns(2)
+        with bb1:
+            csv = trend.to_csv(index=False).encode('utf-8')
+            st.download_button("⤵ Export", data=csv, file_name="hsg17_trend.csv", mime="text/csv", key="trend_csv_dl", use_container_width=True)
+        with bb2:
+            if st.button("🖨 Print", key="trend_print", use_container_width=True):
+                st.toast("Use your browser's Print (Ctrl+P / ⌘P) — the chart will be included.")
+
+    st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
     st.caption("Each point represents the total issues logged in one run of the T0-to-Host tool (within your current filters). Re-runs update the 'current' cards above but the full history stays in the log for trending.")
 else:

@@ -144,37 +144,39 @@ current = get_latest_snapshot(filtered_df)
 current_with_deltas = get_latest_with_deltas(filtered_df)
 
 if DATA_FILE.exists():
-    with open(DATA_FILE, "rb") as f:
-        st.download_button(
-            "📥 Download live validation_error_log.xlsx",
-            data=f,
-            file_name="HSG17_validation_error_log.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch"
-        )
-
-# Reset button for dashboard data (user requested for clearing test data)
-if st.button("🗑️ Reset Dashboard Data (clear HSG17 log)", type="secondary", help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
-    try:
-        if DATA_FILE.exists():
-            df = pd.read_excel(DATA_FILE)
-            if 'hall' in df.columns:
-                df_clean = df[df['hall'] != "HSG17"].copy()
-            else:
-                df_clean = df.copy()
-            if df_clean.empty:
-                # Recreate with proper headers
-                df_clean = pd.DataFrame(columns=[
-                    "timestamp", "hall", "rack_type", "building", 
-                    "error_category", "count", "source_file", "processed_by"
-                ])
-            df_clean.to_excel(DATA_FILE, index=False)
-            st.success("HSG17 dashboard data has been cleared. The page will refresh with empty state.")
-            st.rerun()
-        else:
-            st.info("No data file found to clear.")
-    except Exception as e:
-        st.error(f"Failed to clear data: {e}")
+    col1, col2 = st.columns(2)
+    with col1:
+        with open(DATA_FILE, "rb") as f:
+            st.download_button(
+                "📥 Download live validation_error_log.xlsx",
+                data=f,
+                file_name="HSG17_validation_error_log.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch"
+            )
+    with col2:
+        # Reset button for dashboard data (user requested for clearing test data)
+        if st.button("🗑️ Reset Dashboard Data (clear HSG17 log)", type="secondary", width="stretch", help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
+            try:
+                if DATA_FILE.exists():
+                    df = pd.read_excel(DATA_FILE)
+                    if 'hall' in df.columns:
+                        df_clean = df[df['hall'] != "HSG17"].copy()
+                    else:
+                        df_clean = df.copy()
+                    if df_clean.empty:
+                        # Recreate with proper headers
+                        df_clean = pd.DataFrame(columns=[
+                            "timestamp", "hall", "rack_type", "building", 
+                            "error_category", "count", "source_file", "processed_by"
+                        ])
+                    df_clean.to_excel(DATA_FILE, index=False)
+                    st.success("HSG17 dashboard data has been cleared. The page will refresh with empty state.")
+                    st.rerun()
+                else:
+                    st.info("No data file found to clear.")
+            except Exception as e:
+                st.error(f"Failed to clear data: {e}")
 
 st.divider()
 

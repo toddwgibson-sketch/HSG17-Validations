@@ -339,9 +339,10 @@ st.markdown('<div class="section-header">Errors by Category × Rack (per Placeme
 if not current.empty:
     # New design: one table per Placement Group
     # rows: error_category, columns: rack (within the PG)
+    # Only GPU racks per HSG17 - Placement Groups.txt (SKU GPU_GB300_NVL72_R.03)
+    shown = False
     for bldg in sorted(current['building'].dropna().unique()):
         sub = current[current['building'] == bldg]
-        # Only GPU racks (SKU GPU_GB300_NVL72_R.03 from HSG17 - Placement Groups.txt)
         if 'rack' in sub.columns:
             sub = sub[sub['rack'].apply(is_gpu_rack)]
         if sub.empty:
@@ -369,6 +370,11 @@ if not current.empty:
                 for col in sub_pivot.columns
             }
         )
+        shown = True
+    if not shown:
+        st.caption("No GPU-rack errors in the current filtered data. These tables only include racks that have the name 'GPU_GB300_NVL72_R.03' in your HSG17 - Placement Groups.txt file. Non-GPU racks (e.g. 3110 and other QFAB) are shown in the cards + breakdown above but are excluded here.")
+else:
+    st.caption("No data for the rack tables (see filters or ingest via the T1-to-T0 tool).")
 
 st.divider()
 

@@ -322,34 +322,52 @@ else:
 
 st.divider()
 
-st.markdown('<div class="section-header">Errors by Category × Placement Group (respects sidebar filters)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Errors by Category × Rack (per Placement Group, respects sidebar filters)</div>', unsafe_allow_html=True)
 
 if not current.empty:
-    pivot = (
+    # New design: one table per Placement Group
+    # rows: error_category, columns: rack (within the PG)
+    for bldg in sorted(current['building'].dropna().unique()):
+        sub = current[current['building'] == bldg]
+        if sub.empty:
+            continue
+        sub_pivot = (
+            sub.pivot_table(
+                index="error_category",
+                columns="rack",
+                values="count",
+                aggfunc="sum",
+                fill_value=0
+            )
+            .astype(int)
+        )
+        sub_pivot["Total"] = sub_pivot.sum(axis=1)
+        sub_pivot = sub_pivot.sort_values("Total", ascending=False)
+        sub_pivot.loc["TOTAL"] = sub_pivot.sum()
+
+        st.markdown(f"**{bldg}**")
+        st.dataframe(
+            sub_pivot,
+            width="stretch",
+            column_config={
+                col: st.column_config.NumberColumn(col, format="%d") 
+                for col in sub_pivot.columns
+            }
+        )
+
+    # Keep overall category bar as summary (totals across PGs)
+    cat_totals = (
         current.pivot_table(
             index="error_category",
-            columns="building",
             values="count",
             aggfunc="sum",
             fill_value=0
         )
         .astype(int)
+        .reset_index()
     )
-    pivot["Total"] = pivot.sum(axis=1)
-    pivot = pivot.sort_values("Total", ascending=False)
-    pivot.loc["TOTAL"] = pivot.sum()
-
-    st.dataframe(
-        pivot,
-        width="stretch",
-        column_config={
-            col: st.column_config.NumberColumn(col, format="%d") 
-            for col in pivot.columns
-        }
-    )
-
-    cat_totals = pivot.drop("TOTAL")["Total"].reset_index()
     cat_totals.columns = ["Category", "Errors"]
+    cat_totals = cat_totals.sort_values("Errors", ascending=False)
     fig = px.bar(cat_totals, x="Category", y="Errors", height=280)
     fig.update_layout(margin=dict(l=0, r=0, t=20, b=0))
     st.plotly_chart(fig, width="stretch", key="hsg17_cat_totals", config={"displayModeBar": False})

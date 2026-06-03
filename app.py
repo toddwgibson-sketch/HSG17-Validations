@@ -7,7 +7,7 @@ require_login()
 # This hides the root "app" tab/page entirely (no more broken app tab or switch errors).
 t0_tool = st.Page(
     "pages/01_HSG17_T1_to_T0_Tool.py",
-    title="HSG17 T0-to-Host",
+    title="HSG17 T0-to-T1",
     icon="🖥️",
     default=True,
 )

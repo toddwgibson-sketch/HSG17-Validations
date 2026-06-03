@@ -12,7 +12,6 @@ if str(_root) not in sys.path:
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
@@ -572,107 +571,59 @@ if not filtered_df.empty:
     trend.columns = ['Run Time', 'Total Issues']
     trend = trend.sort_values('Run Time')
 
-    # Category summary for the right panel (from current snapshot for latest view)
-    cat_summary = current.groupby('error_category')['count'].sum().reset_index()
-    cat_summary = cat_summary[cat_summary['count'] > 0]
+    # Full-width trend panel (pie chart removed as not needed)
+    st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Issues Over Time (filtered runs)</div>", unsafe_allow_html=True)
+    # Trend chart - combo bar + line like the "Production" example
+    fig = go.Figure()
+    # Bars for each run (like production bars)
+    fig.add_trace(go.Bar(
+        x=trend['Run Time'],
+        y=trend['Total Issues'],
+        name='Issues per Run',
+        marker_color='#67e8f9',
+        opacity=0.7
+    ))
+    # Line + area on top (smooth trend)
+    fig.add_trace(go.Scatter(
+        x=trend['Run Time'],
+        y=trend['Total Issues'],
+        mode='lines+markers',
+        line=dict(color='#22d3ee', width=3, shape='spline'),
+        fill='tozeroy',
+        fillcolor='rgba(34, 211, 238, 0.15)',
+        marker=dict(size=6, color='#67e8f9', line=dict(width=1, color='#0b1120')),
+        name='Trend'
+    ))
+    fig.update_layout(
+        height=340,
+        margin=dict(l=0, r=0, t=8, b=0),
+        xaxis_title='Run Timestamp',
+        yaxis_title='Open Issues',
+        plot_bgcolor='#0b1120',
+        paper_bgcolor='#0b1120',
+        font_color='#e2e8f0',
+        xaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
+        yaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
+        hovermode='x unified',
+        barmode='overlay',
+        showlegend=False
+    )
+    fig.update_traces(hovertemplate='%{x}<br>%{y} issues<extra></extra>')
 
-    # Two panels side-by-side to match the classic dashboard example
-    left_panel, right_panel = st.columns(2)
+    # Export / Print pills for this panel
+    tcols = st.columns([0.75, 0.25])
+    with tcols[1]:
+        bb1, bb2 = st.columns(2)
+        with bb1:
+            csv = trend.to_csv(index=False).encode('utf-8')
+            st.download_button("⤵", data=csv, file_name="hsg17_trend.csv", mime="text/csv", key="trend_csv_dl", use_container_width=True, help="Export trend data")
+        with bb2:
+            if st.button("🖨", key="trend_print", use_container_width=True, help="Print chart"):
+                st.toast("Use browser Print (Ctrl+P)")
+    st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    with left_panel:
-        st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Issues Over Time (filtered runs)</div>", unsafe_allow_html=True)
-        # Trend chart - combo bar + line like the "Production" example
-        fig = go.Figure()
-        # Bars for each run (like production bars)
-        fig.add_trace(go.Bar(
-            x=trend['Run Time'],
-            y=trend['Total Issues'],
-            name='Issues per Run',
-            marker_color='#67e8f9',
-            opacity=0.7
-        ))
-        # Line + area on top (smooth trend)
-        fig.add_trace(go.Scatter(
-            x=trend['Run Time'],
-            y=trend['Total Issues'],
-            mode='lines+markers',
-            line=dict(color='#22d3ee', width=3, shape='spline'),
-            fill='tozeroy',
-            fillcolor='rgba(34, 211, 238, 0.15)',
-            marker=dict(size=6, color='#67e8f9', line=dict(width=1, color='#0b1120')),
-            name='Trend'
-        ))
-        fig.update_layout(
-            height=340,
-            margin=dict(l=0, r=0, t=8, b=0),
-            xaxis_title='Run Timestamp',
-            yaxis_title='Open Issues',
-            plot_bgcolor='#0b1120',
-            paper_bgcolor='#0b1120',
-            font_color='#e2e8f0',
-            xaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
-            yaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
-            hovermode='x unified',
-            barmode='overlay',
-            showlegend=False
-        )
-        fig.update_traces(hovertemplate='%{x}<br>%{y} issues<extra></extra>')
-
-        # Export / Print pills for this panel
-        tcols = st.columns([0.75, 0.25])
-        with tcols[1]:
-            bb1, bb2 = st.columns(2)
-            with bb1:
-                csv = trend.to_csv(index=False).encode('utf-8')
-                st.download_button("⤵", data=csv, file_name="hsg17_trend.csv", mime="text/csv", key="trend_csv_dl", use_container_width=True, help="Export trend data")
-            with bb2:
-                if st.button("🖨", key="trend_print", use_container_width=True, help="Print chart"):
-                    st.toast("Use browser Print (Ctrl+P)")
-        st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with right_panel:
-        st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Errors by Category (latest snapshot)</div>", unsafe_allow_html=True)
-        # Right panel: Category breakdown pie (visual like the map panel in the example)
-        if not cat_summary.empty:
-            # Use the CAT_COLORS for consistency
-            color_map = {cat: CAT_COLORS.get(cat, "#64748b") for cat in cat_summary['error_category']}
-            pie = px.pie(
-                cat_summary,
-                values='count',
-                names='error_category',
-                color='error_category',
-                color_discrete_map=color_map,
-                hole=0.4
-            )
-            pie.update_layout(
-                height=340,
-                margin=dict(l=0, r=0, t=8, b=0),
-                plot_bgcolor='#0b1120',
-                paper_bgcolor='#0b1120',
-                font_color='#e2e8f0',
-                showlegend=True,
-                legend=dict(orientation="v", y=0.5)
-            )
-            pie.update_traces(textposition='inside', textinfo='percent+label', hovertemplate='%{label}<br>%{value} issues (%{percent})<extra></extra>')
-
-            # Small export for category data
-            ccols = st.columns([0.75, 0.25])
-            with ccols[1]:
-                bb1, bb2 = st.columns(2)
-                with bb1:
-                    csv = cat_summary.to_csv(index=False).encode('utf-8')
-                    st.download_button("⤵", data=csv, file_name="hsg17_categories.csv", mime="text/csv", key="cat_csv_dl", use_container_width=True, help="Export category data")
-                with bb2:
-                    if st.button("🖨", key="cat_print", use_container_width=True, help="Print"):
-                        st.toast("Use browser Print (Ctrl+P)")
-            st.plotly_chart(pie, width="stretch", key="hsg17_category_pie", config={"displayModeBar": False})
-        else:
-            st.info("No category data")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.caption("Left: Total open issues over time (bars = per run, line/area = trend). Right: Latest breakdown by error category. Re-runs update the cards above; history is preserved for trends.")
+    st.caption("Total open issues over time (bars = per run, line/area = trend). Re-runs update the cards above; history is preserved for trends.")
 else:
     st.info("No data for trend chart with current filters.")

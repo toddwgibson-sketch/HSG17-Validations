@@ -355,23 +355,6 @@ if not current.empty:
             }
         )
 
-    # Keep overall category bar as summary (totals across PGs)
-    cat_totals = (
-        current.pivot_table(
-            index="error_category",
-            values="count",
-            aggfunc="sum",
-            fill_value=0
-        )
-        .astype(int)
-        .reset_index()
-    )
-    cat_totals.columns = ["Category", "Errors"]
-    cat_totals = cat_totals.sort_values("Errors", ascending=False)
-    fig = px.bar(cat_totals, x="Category", y="Errors", height=280)
-    fig.update_layout(margin=dict(l=0, r=0, t=20, b=0))
-    st.plotly_chart(fig, width="stretch", key="hsg17_cat_totals", config={"displayModeBar": False})
-
 st.divider()
 
 # Progress Trend moved to bottom as requested

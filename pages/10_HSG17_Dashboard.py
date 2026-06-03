@@ -128,14 +128,14 @@ st.markdown("""
         opacity: 0.65;
         margin-top: 3px;
     }
-    /* PG breakdown cards - outline all the way around each card (like exec snapshot cards) */
+    /* PG breakdown cards - the top dark rounded bar with cyan outline (the "card" header) */
     .hsg17-pg-card {
-        background: #1e2937;
+        background-color: #0f172a;
         border: 1px solid #22d3ee;
-        border-radius: 10px;
-        padding: 10px 12px;
-        margin-bottom: 4px;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 0 0 1px #22d3ee;
+        border-radius: 9999px;
+        padding: 4px 12px;
+        margin-bottom: 8px;
+        /* no extra shadow needed, the border is the outline */
     }
     .hsg17-pg-card .pg-pill {
         background-color:#0f172a; 
@@ -462,11 +462,13 @@ if not current.empty:
             list_html += "</div>"
 
             with cols[i]:
+                # The "card" is the top dark rounded bar with cyan border (like the screenshot)
+                # It contains only the small pill around the PG text
                 st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
-                # PG label as a small cyan-outlined pill
                 st.markdown(f'<span class="pg-pill">{bldg}</span>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
-                # big number
+                # big number BELOW the top card bar
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
                 # rounded bar (HTML, rounded ends)
@@ -478,8 +480,6 @@ if not current.empty:
                         bar_html += f'<div style="width:{pct}%; background:{d["Color"]}; height:100%;"></div>'
                     bar_html += '</div>'
                     st.markdown(bar_html, unsafe_allow_html=True)
-
-                st.markdown('</div>', unsafe_allow_html=True)
 
                 # list below the card (analysis below the outlined card)
                 st.markdown(list_html, unsafe_allow_html=True)

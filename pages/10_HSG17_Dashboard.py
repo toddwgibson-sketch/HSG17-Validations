@@ -131,11 +131,11 @@ st.markdown("""
     /* PG breakdown cards - outline all the way around each card (like exec snapshot cards) */
     .hsg17-pg-card {
         background: #1e2937;
-        border: 2px solid #64748b;
+        border: 1px solid #22d3ee;
         border-radius: 10px;
         padding: 10px 12px;
         margin-bottom: 4px;
-        box-shadow: 0 0 0 3px #0ea5e9;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 0 0 1px #22d3ee;
     }
     /* Rack table panels */
     .rack-panel {
@@ -376,7 +376,6 @@ if not current.empty:
 
     for start_idx in range(0, len(building_order), CARDS_PER_ROW):
         row_buildings = building_order[start_idx : start_idx + CARDS_PER_ROW]
-
         cols = st.columns(CARDS_PER_ROW)
 
         for i, bldg in enumerate(row_buildings):
@@ -411,7 +410,7 @@ if not current.empty:
                         "Color": CAT_COLORS.get(cat, "#7f8c8d")
                     })
 
-            # build list html (to be inside the card)
+            # build the list html for below the card
             list_html = "<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#cbd5e1;'>"
             for cat in category_order:
                 label = CAT_LABELS.get(cat, cat)
@@ -431,13 +430,13 @@ if not current.empty:
 
             with cols[i]:
                 st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
-                # PG name pill (dark rounded top bar)
-                st.markdown(f'<div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 9999px; padding: 3px 10px; display: inline-block; margin-bottom: 6px;"><span style="font-size: 0.7rem; font-weight: 500; color: #94a3b8; letter-spacing: 0.5px;">{bldg}</span></div>', unsafe_allow_html=True)
+                # top dark rounded bar (the long dark rounded header like in the screenshot), with PG label as small pill inside left
+                st.markdown(f'<div style="background-color: #0f172a; border-radius: 9999px; padding: 4px 12px; margin-bottom: 8px; border: 1px solid #334155;"><span style="font-size: 0.7rem; font-weight: 500; color: #94a3b8; letter-spacing: 0.5px;">{bldg}</span></div>', unsafe_allow_html=True)
 
                 # big number
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
-                # rounded bar (HTML)
+                # rounded bar (HTML, rounded ends)
                 if bar_data:
                     total_for_bar = sum(d['Count'] for d in bar_data)
                     bar_html = '<div style="height:16px; background:#0f172a; border-radius:999px; overflow:hidden; display:flex; margin:4px 0 6px; border:1px solid #334155;">'
@@ -447,10 +446,10 @@ if not current.empty:
                     bar_html += '</div>'
                     st.markdown(bar_html, unsafe_allow_html=True)
 
-                # the list inside the card so outline goes all the way around
-                st.markdown(list_html, unsafe_allow_html=True)
-
                 st.markdown('</div>', unsafe_allow_html=True)
+
+                # list below the card (analysis below the outlined card)
+                st.markdown(list_html, unsafe_allow_html=True)
 else:
     st.info("No matching Placement Group data after filters. Try broadening your sidebar selections.")
 

@@ -1,5 +1,5 @@
 ﻿import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from pathlib import Path
 
@@ -63,7 +63,7 @@ def log_errors(hall: str, rack_type: str, building: str, rack: str, error_catego
                 ws.append(headers)
 
             ws.append([
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 hall, rack_type, building, rack, error_category, count, source_file, processed_by
             ])
             wb.save(LOG_FILE)

@@ -128,14 +128,14 @@ st.markdown("""
         opacity: 0.65;
         margin-top: 3px;
     }
-    /* PG breakdown cards - the top dark rounded bar with cyan outline (the "card" header) */
+    /* PG breakdown cards - full gradient like exec snapshot cards, with outline */
     .hsg17-pg-card {
-        background-color: #0f172a;
-        border: 1px solid #22d3ee;
-        border-radius: 9999px;
-        padding: 4px 12px;
-        margin-bottom: 8px;
-        /* no extra shadow needed, the border is the outline */
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 4px;
+        color: white;
+        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+        /* background set inline per card for gradient */
     }
     .hsg17-pg-card .pg-pill {
         background-color:#0f172a; 
@@ -214,6 +214,11 @@ def load_data():
         except Exception as e:
             print(f"[DASHBOARD] Could not save upgraded log: {e}")
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    if not df.empty:
+        # Treat stored timestamps as UTC (we log in UTC now) and convert to local tz of this computer for display.
+        # This makes "Last Updated" etc. match your local time. Historical data may shift if previously logged in another tz.
+        local_tz = datetime.now().astimezone().tzinfo
+        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert(local_tz)
     return df.dropna(subset=['timestamp'])
 
 df = load_data()
@@ -355,7 +360,15 @@ col1, col2, col3, col4 = st.columns(4)
 total_errors = int(current['count'].sum())
 unique_blocks = current['building'].nunique()
 active_rack_types = current['rack_type'].nunique()
-last_ts = current['timestamp'].max().strftime("%Y-%m-%d %H:%M") if not current.empty else "—"
+last_ts = "—"
+if not current.empty:
+    ts = current['timestamp'].max()
+    if pd.notna(ts):
+        ts = pd.Timestamp(ts)
+        if ts.tz is None:
+            ts = ts.tz_localize('UTC')
+        local_ts = ts.tz_convert(datetime.now().astimezone().tzinfo)
+        last_ts = local_ts.strftime("%Y-%m-%d %H:%M")
 
 def _metric_card(label, value, icon, c1, c2, sub=""):
     return f'''
@@ -401,6 +414,17 @@ CAT_LABELS = {
     "Interface Down Errors": "Interface Down",
 }
 
+# Gradient palette for PG cards - cycle like the exec snapshot cards
+GRADIENTS = [
+    ("#0ea5e9", "#0369a1"),  # blue
+    ("#f43f5e", "#9f1239"),  # rose
+    ("#f59e0b", "#c2410f"),  # orange
+    ("#a855f7", "#6b21a8"),  # purple
+    ("#10b981", "#047857"),  # green
+    ("#06b6d4", "#0e7490"),  # cyan
+    ("#8b5cf6", "#5b21b6"),  # violet
+]
+
 if not current.empty:
     building_order = sorted(current['building'].unique())
     CARDS_PER_ROW = 5
@@ -443,8 +467,11 @@ if not current.empty:
                         "Color": CAT_COLORS.get(cat, "#7f8c8d")
                     })
 
-            # build the list html for below the card
-            list_html = "<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#cbd5e1;'>"
+            grad_idx = (start_idx + i) % len(GRADIENTS)
+            g1, g2 = GRADIENTS[grad_idx]
+
+            # build the list html (white text for gradient bg)
+            list_html = "<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#f8fafc;'>"
             for cat in category_order:
                 label = CAT_LABELS.get(cat, cat)
                 val = cat_current.get(cat, 0)
@@ -462,27 +489,31 @@ if not current.empty:
             list_html += "</div>"
 
             with cols[i]:
-                # The "card" is the top dark rounded bar with cyan border (like the screenshot)
-                # It contains only the small pill around the PG text
-                st.markdown('<div class="hsg17-pg-card">', unsafe_allow_html=True)
-                st.markdown(f'<span class="pg-pill">{bldg}</span>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+                # full gradient card like exec snapshot
+                st.markdown(f'<div class="hsg17-pg-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: none; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
 
-                # big number BELOW the top card bar
+                # small pill around the PG text (on the gradient)
+                st.markdown(f'<span class="pg-pill">{bldg}</span>', unsafe_allow_html=True)
+
+                # big number
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
-                # rounded bar (HTML, rounded ends)
+                # rounded bar - transparent bg so it sits on the gradient
                 if bar_data:
                     total_for_bar = sum(d['Count'] for d in bar_data)
-                    bar_html = '<div style="height:16px; background:#0f172a; border-radius:999px; overflow:hidden; display:flex; margin:4px 0 6px; border:1px solid #334155;">'
+                    bar_html = '<div style="height:16px; background: rgba(255,255,255,0.15); border-radius:999px; overflow:hidden; display:flex; margin:4px 0 6px; border:1px solid rgba(255,255,255,0.3);">'
                     for d in bar_data:
                         pct = (d['Count'] / total_for_bar * 100) if total_for_bar > 0 else 0
                         bar_html += f'<div style="width:{pct}%; background:{d["Color"]}; height:100%;"></div>'
                     bar_html += '</div>'
                     st.markdown(bar_html, unsafe_allow_html=True)
 
-                # list below the card (analysis below the outlined card)
+                # list with semi-transparent overlay for readability on gradient (the analysis)
+                st.markdown('<div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; margin-top: 4px;">', unsafe_allow_html=True)
                 st.markdown(list_html, unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                st.markdown('</div>', unsafe_allow_html=True)
 else:
     st.info("No matching Placement Group data after filters. Try broadening your sidebar selections.")
 

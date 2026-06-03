@@ -32,6 +32,7 @@ def ensure_log_exists():
                 cols = list(df.columns)
                 idx = cols.index('building') + 1 if 'building' in cols else len(cols)
                 df.insert(idx, 'rack', '')
+                df['rack'] = df['rack'].astype('object').fillna('').astype(str)
                 df.to_excel(LOG_FILE, index=False)
                 print(f"[DATA_LOGGER] Upgraded log schema with 'rack' column at: {abs_path}")
         except Exception as e:

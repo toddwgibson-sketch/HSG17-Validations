@@ -49,6 +49,17 @@ def load_data():
             "error_category", "count", "source_file", "processed_by"
         ])
     df = pd.read_excel(DATA_FILE)
+    # Upgrade schema if 'rack' column missing (for old logs without rack)
+    if 'rack' not in df.columns:
+        cols = list(df.columns)
+        idx = cols.index('building') + 1 if 'building' in cols else len(cols)
+        df.insert(idx, 'rack', '')
+        df['rack'] = df['rack'].astype('object').fillna('').astype(str)
+        try:
+            df.to_excel(DATA_FILE, index=False)
+            print(f"[DASHBOARD] Upgraded log schema with 'rack' column")
+        except Exception as e:
+            print(f"[DASHBOARD] Could not save upgraded log: {e}")
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
     return df.dropna(subset=['timestamp'])
 
@@ -130,7 +141,8 @@ def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
         if pd.isna(delta):
             delta = None
 
-        rack = str(group.iloc[-1].get('rack', '')) if 'rack' in group.columns else ''
+        rack_val = group.iloc[-1].get('rack', '') if 'rack' in group.columns else ''
+        rack = str(rack_val) if pd.notna(rack_val) and rack_val != '' else ''
 
         records.append({
             'hall': hall,
@@ -356,6 +368,7 @@ if not current.empty:
         'previous': 'Previous',
         'delta': 'Delta'
     })
+    detail['Rack'] = detail['Rack'].fillna('').astype(str)
     detail = detail.sort_values(['Placement Group', 'Category'])
     st.dataframe(detail, width="stretch", hide_index=True, use_container_width=True)
 

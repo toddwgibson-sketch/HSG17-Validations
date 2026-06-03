@@ -134,7 +134,6 @@ st.markdown("""
         margin-bottom: 4px;
         color: white;
         box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
-        /* background set inline per card for gradient */
     }
     .hsg17-pg-card .pg-pill {
         background-color:#0f172a; 
@@ -154,7 +153,7 @@ st.markdown("""
         padding: 8px 12px;
         margin-bottom: 12px;
     }
-    /* Bottom panels like the classic example */
+    /* Bottom panels style */
     .dashboard-panel {
         background: #1e2937;
         border: 1px solid #334155;
@@ -184,6 +183,26 @@ st.markdown("""
     /* Mute sidebar filter labels and header for consistency */
     .stSidebar .stMultiSelect label, .stSidebar .stDateInput label {
         color: #94a3b8 !important;
+    }
+
+    /* Cool gradient buttons for download error log and reset dashboard */
+    .stDownloadButton button, .stButton button {
+        background: linear-gradient(135deg, #1e3a8a, #0369a1) !important;
+        color: #e0f2fe !important;
+        border: 1px solid #22d3ee !important;
+        border-radius: 8px !important;
+        padding: 0.6rem 1rem !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+    }
+    .stDownloadButton button:hover, .stButton button:hover {
+        background: linear-gradient(135deg, #0369a1, #1e3a8a) !important;
+        box-shadow: 0 0 0 2px #22d3ee !important;
+        transform: translateY(-1px) !important;
+    }
+    .stButton button[kind="secondary"] {
+        background: linear-gradient(135deg, #334155, #1e2937) !important;
+        border: 1px solid #64748b !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -316,19 +335,22 @@ current = get_latest_snapshot(filtered_df)
 current_with_deltas = get_latest_with_deltas(filtered_df)
 
 if DATA_FILE.exists():
+    st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management</div>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:
             st.download_button(
-                "📥 Download live validation_error_log.xlsx",
+                "📥 Download Error Log",
                 data=f,
                 file_name="HSG17_validation_error_log.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch"
+                width="stretch",
+                help="Download the full validation error log (all halls)"
             )
     with col2:
         # Reset button for dashboard data (user requested for clearing test data)
-        if st.button("🗑️ Reset Dashboard Data (clear HSG17 log)", type="secondary", width="stretch", help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
+        if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
             try:
                 if DATA_FILE.exists():
                     df = pd.read_excel(DATA_FILE)
@@ -349,6 +371,7 @@ if DATA_FILE.exists():
                     st.info("No data file found to clear.")
             except Exception as e:
                 st.error(f"Failed to clear data: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
@@ -488,16 +511,12 @@ if not current.empty:
             list_html += "</div>"
 
             with cols[i]:
-                # full gradient card like exec snapshot
                 st.markdown(f'<div class="hsg17-pg-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: none; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
 
-                # small pill around the PG text (on the gradient)
                 st.markdown(f'<span class="pg-pill">{bldg}</span>', unsafe_allow_html=True)
 
-                # big number
                 st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
-                # rounded bar - transparent bg so it sits on the gradient
                 if bar_data:
                     total_for_bar = sum(d['Count'] for d in bar_data)
                     bar_html = '<div style="height:16px; background: rgba(255,255,255,0.15); border-radius:999px; overflow:hidden; display:flex; margin:4px 0 6px; border:1px solid rgba(255,255,255,0.3);">'
@@ -507,7 +526,6 @@ if not current.empty:
                     bar_html += '</div>'
                     st.markdown(bar_html, unsafe_allow_html=True)
 
-                # list with semi-transparent overlay for readability on gradient (the analysis)
                 st.markdown('<div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; margin-top: 4px;">', unsafe_allow_html=True)
                 st.markdown(list_html, unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -558,7 +576,7 @@ if not current.empty:
 
 st.divider()
 
-# Progress Trend moved to bottom as requested - now in classic two-panel layout like the example
+# Progress Trend moved to bottom as requested (full width, pie removed)
 st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
 
 if not filtered_df.empty:
@@ -571,12 +589,12 @@ if not filtered_df.empty:
     trend.columns = ['Run Time', 'Total Issues']
     trend = trend.sort_values('Run Time')
 
-    # Full-width trend panel (pie chart removed as not needed)
+    # Full-width trend panel
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Issues Over Time (filtered runs)</div>", unsafe_allow_html=True)
-    # Trend chart - combo bar + line like the "Production" example
+    # Trend chart - combo bar + line
     fig = go.Figure()
-    # Bars for each run (like production bars)
+    # Bars for each run
     fig.add_trace(go.Bar(
         x=trend['Run Time'],
         y=trend['Total Issues'],

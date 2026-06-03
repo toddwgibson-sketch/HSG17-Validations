@@ -307,41 +307,6 @@ else:
 
 st.divider()
 
-# New development: Trend chart for "Progress to Zero" visibility over historical runs
-st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
-
-if not filtered_df.empty:
-    # Aggregate total issues per logged run time (using the raw filtered log entries)
-    trend = (
-        filtered_df.groupby(filtered_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M'))['count']
-        .sum()
-        .reset_index()
-    )
-    trend.columns = ['Run Time', 'Total Issues']
-    trend = trend.sort_values('Run Time')
-
-    fig = px.line(
-        trend, 
-        x='Run Time', 
-        y='Total Issues', 
-        markers=True,
-        title='Total Open Issues per Processing Run (filtered view)'
-    )
-    fig.update_layout(
-        height=320, 
-        margin=dict(l=0, r=0, t=30, b=0),
-        xaxis_title='Run Timestamp',
-        yaxis_title='Sum of Counts (all categories)'
-    )
-    fig.update_traces(line=dict(width=3))
-    st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
-
-    st.caption("Each point represents the total issues logged in one run of the T0-to-Host tool (within your current filters). Re-runs update the 'current' cards above but the full history stays in the log for trending.")
-else:
-    st.info("No data for trend chart with current filters.")
-
-st.divider()
-
 st.markdown('<div class="section-header">Errors by Category × Placement Group (respects sidebar filters)</div>', unsafe_allow_html=True)
 
 if not current.empty:
@@ -373,3 +338,66 @@ if not current.empty:
     fig = px.bar(cat_totals, x="Category", y="Errors", height=280)
     fig.update_layout(margin=dict(l=0, r=0, t=20, b=0))
     st.plotly_chart(fig, width="stretch", key="hsg17_cat_totals", config={"displayModeBar": False})
+
+st.divider()
+
+st.markdown('<div class="section-header">Current Issues Detail</div>', unsafe_allow_html=True)
+
+if not current.empty:
+    detail = current[['building', 'error_category', 'current', 'previous', 'delta']].copy()
+    detail = detail.rename(columns={
+        'building': 'Placement Group',
+        'error_category': 'Category',
+        'current': 'Current',
+        'previous': 'Previous',
+        'delta': 'Delta'
+    })
+    detail = detail.sort_values(['Placement Group', 'Category'])
+    st.dataframe(detail, width="stretch", hide_index=True, use_container_width=True)
+
+    # CSV export for the current filtered view
+    csv = detail.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download current filtered view (CSV)",
+        data=csv,
+        file_name="hsg17_current_issues.csv",
+        mime="text/csv",
+        width="stretch"
+    )
+else:
+    st.info("No current issues in filtered view.")
+
+st.divider()
+
+# Progress Trend moved to bottom as requested
+st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
+
+if not filtered_df.empty:
+    # Aggregate total issues per logged run time (using the raw filtered log entries)
+    trend = (
+        filtered_df.groupby(filtered_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M'))['count']
+        .sum()
+        .reset_index()
+    )
+    trend.columns = ['Run Time', 'Total Issues']
+    trend = trend.sort_values('Run Time')
+
+    fig = px.line(
+        trend, 
+        x='Run Time', 
+        y='Total Issues', 
+        markers=True,
+        title='Total Open Issues per Processing Run (filtered view)'
+    )
+    fig.update_layout(
+        height=320, 
+        margin=dict(l=0, r=0, t=30, b=0),
+        xaxis_title='Run Timestamp',
+        yaxis_title='Sum of Counts (all categories)'
+    )
+    fig.update_traces(line=dict(width=3))
+    st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
+
+    st.caption("Each point represents the total issues logged in one run of the T0-to-Host tool (within your current filters). Re-runs update the 'current' cards above but the full history stays in the log for trending.")
+else:
+    st.info("No data for trend chart with current filters.")

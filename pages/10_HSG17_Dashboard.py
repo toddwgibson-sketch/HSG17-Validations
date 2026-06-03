@@ -6,6 +6,8 @@ import plotly.express as px
 from pathlib import Path
 from datetime import datetime
 
+from utils.hsg17_models import is_gpu_rack
+
 st.set_page_config(
     page_title="HSG17 Dashboard",
     page_icon="📊",
@@ -329,6 +331,9 @@ if not current.empty:
     # rows: error_category, columns: rack (within the PG)
     for bldg in sorted(current['building'].dropna().unique()):
         sub = current[current['building'] == bldg]
+        # Only GPU racks (SKU GPU_GB300_NVL72_R.03 from HSG17 - Placement Groups.txt)
+        if 'rack' in sub.columns:
+            sub = sub[sub['rack'].apply(is_gpu_rack)]
         if sub.empty:
             continue
         sub_pivot = (

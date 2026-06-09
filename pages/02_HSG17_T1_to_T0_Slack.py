@@ -201,15 +201,12 @@ def highlight_mismatch_pairs(wb, log=lambda *_: None):
     # ... (full reciprocal pair logic)
     pass
 
-# ── Streamlit UI (matching LVV Portal style) ─────────────────────────────────
-st.set_page_config(page_title="HSG17 T1-to-T0 Slack Upload", page_icon="🖥️", layout="wide")
+# ── Streamlit UI (match 01_HSG17_T1_to_T0_Tool for uniformity) ───────────────
+st.set_page_config(page_title="HSG17 T1-to-T0 Slack Formatter", page_icon="🖥️", layout="wide")
 
-st.markdown("""
-<div style="background-color: #0d1117; padding: 30px 20px; border-radius: 8px; color: white; display: flex; align-items: center; gap: 22px;">
-    <span style="font-size: 56px;">💻</span>
-    <h1 style="margin: 0; font-size: 40px; font-weight: 700;">HSG17 Slack Formatter</h1>
-</div>
-""", unsafe_allow_html=True)
+st.title("🖥️ HSG17 T1-to-T0 Slack Upload")
+st.caption("")
+
 st.markdown("""
 **How to use:**
 1. Upload your **Cutsheet** (Installation Sheet)
@@ -219,11 +216,44 @@ st.markdown("""
 The formatted report(s) will be available for immediate download.
 """)
 
-cutsheet_uploader = st.file_uploader("Cutsheet (Installation Sheet)", type=["xlsx", "xls"])
+# ── Uploaders (stacked vertically) ───────────────────────────────────────────
+cutsheet_uploader = st.file_uploader(
+    "Cutsheet (Installation Sheet)",
+    type=["xlsx", "xls"],
+    accept_multiple_files=False,
+    help="The Installation Sheet from the master cutsheet"
+)
 
-input_uploaders = st.file_uploader("Slack Report Excel files", type=["xlsx", "xls"], accept_multiple_files=True)
+input_uploaders = st.file_uploader(
+    "Slack Report Excel files",
+    type=["xlsx", "xls"],
+    accept_multiple_files=True,
+    help="One or more Slack-style validation report files"
+)
 
-if st.button("🚀 Generate Formatted Report", type="primary", use_container_width=True):
+# Red primary button to differentiate from the LV Portal tool while keeping everything else uniform
+st.markdown("""
+<style>
+div[data-testid="stButton"] button[kind="primary"] {
+    background-color: #c62828 !important;
+    border-color: #c62828 !important;
+    color: white !important;
+}
+div[data-testid="stButton"] button[kind="primary"]:hover {
+    background-color: #b71c1c !important;
+    border-color: #b71c1c !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+run_btn = st.button(
+    "🚀 Generate Formatted Report",
+    type="primary",
+    use_container_width=True,
+    disabled=not (cutsheet_uploader and input_uploaders)
+)
+
+if run_btn:
     if not cutsheet_uploader or not input_uploaders:
         st.error("Please upload the cutsheet and at least one report file.")
         st.stop()

@@ -50,6 +50,21 @@ cutsheet_files = st.file_uploader(
     help="One or more cutsheet files for enrichment"
 )
 
+# Blue primary button (default professional look for the main LV Portal tool)
+st.markdown("""
+<style>
+div[data-testid="stButton"] button[kind="primary"] {
+    background-color: #1565c0 !important;
+    border-color: #1565c0 !important;
+    color: white !important;
+}
+div[data-testid="stButton"] button[kind="primary"]:hover {
+    background-color: #0d47a1 !important;
+    border-color: #0d47a1 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 run_btn = st.button(
     "🚀 Generate Formatted Report",
     type="primary",

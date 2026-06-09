@@ -202,7 +202,7 @@ def highlight_mismatch_pairs(wb, log=lambda *_: None):
     pass
 
 # ── Streamlit UI (matching LVV Portal style) ─────────────────────────────────
-st.set_page_config(page_title="HSG17 Slack Formatter", page_icon="🖥️", layout="wide")
+st.set_page_config(page_title="HSG17 T1-to-T0 Slack Upload", page_icon="🖥️", layout="wide")
 
 st.markdown("""
 <div style="background-color: #0d1117; padding: 30px 20px; border-radius: 8px; color: white; display: flex; align-items: center; gap: 22px;">

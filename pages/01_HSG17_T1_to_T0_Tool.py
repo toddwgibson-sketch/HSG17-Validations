@@ -23,7 +23,7 @@ from utils.hsg17_models import derive_placement_group
 
 st.set_page_config(page_title="HSG17 T1-to-T0 Formatter", page_icon="🖥️", layout="wide")
 
-st.title("🖥️ HSG17 T1-to-T0 Validation Formatter")
+st.title("🖥️ HSG17 T1-to-T0 LVV Portal Upload")
 st.caption("")
 
 st.markdown("""

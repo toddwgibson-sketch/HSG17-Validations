@@ -35,24 +35,20 @@ st.markdown("""
 The formatted report will be available for immediate download.
 """)
 
-# ── Uploaders ────────────────────────────────────────────────────────────────
-col1, col2 = st.columns(2)
+# ── Uploaders (stacked vertically) ───────────────────────────────────────────
+lv_file = st.file_uploader(
+    "LV Portal Validation Export (.xlsx / .xlsm)",
+    type=["xlsx", "xlsm"],
+    accept_multiple_files=False,
+    help="The export containing the error sheets (Optics, FEC, Interface Down, ...)"
+)
 
-with col1:
-    lv_file = st.file_uploader(
-        "LV Portal Validation Export (.xlsx / .xlsm)",
-        type=["xlsx", "xlsm"],
-        accept_multiple_files=False,
-        help="The export containing the error sheets (Optics, FEC, Interface Down, ...)"
-    )
-
-with col2:
-    cutsheet_files = st.file_uploader(
-        "Master Cutsheet(s) / Allconnections",
-        type=["xlsx", "xlsm"],
-        accept_multiple_files=True,
-        help="One or more cutsheet files for enrichment"
-    )
+cutsheet_files = st.file_uploader(
+    "Master Cutsheet(s) / Allconnections",
+    type=["xlsx", "xlsm"],
+    accept_multiple_files=True,
+    help="One or more cutsheet files for enrichment"
+)
 
 run_btn = st.button(
     "🚀 Generate Formatted Report",
@@ -61,12 +57,12 @@ run_btn = st.button(
     disabled=not (lv_file and cutsheet_files)
 )
 
-# ── Processing ───────────────────────────────────────────────────────────────
+# ── Processing (core logic unchanged) ───────────────────────────────────────
 if run_btn and lv_file and cutsheet_files:
     with st.spinner("Processing report with original logic..."):
         tmpdir = Path(tempfile.mkdtemp(prefix="hsg17_t1t0_"))
         try:
-            # Save uploads to temp files (core logic expects real paths)
+            # Save uploads to temp files
             lv_tmp = tmpdir / lv_file.name
             lv_tmp.write_bytes(lv_file.getvalue())
 
@@ -76,10 +72,10 @@ if run_btn and lv_file and cutsheet_files:
                 p.write_bytes(f.getvalue())
                 cuts_tmp_paths.append(str(p))
 
-            # Call the exact original implementation (interactive=False)
+            # Call the exact original implementation
             out_path, counts = format_report(str(lv_tmp), cuts_tmp_paths, interactive=False)
 
-            # Read result for download
+            # Read result
             out_bytes = out_path.read_bytes()
 
             st.success(f"✅ Report ready: {out_path.name}")

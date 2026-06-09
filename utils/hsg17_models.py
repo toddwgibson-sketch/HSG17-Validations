@@ -502,3 +502,52 @@ def derive_placement_group(rack: Optional[str]) -> str:
     if pg:
         return f"PG{pg}"
     return f"Rack-{r}"
+
+
+def derive_placement_and_rack_from_files(file_paths: list) -> tuple[str, str]:
+    """Scan one or more Excel files for rack numbers (in device, source, host, rack columns etc).
+    Returns (placement e.g. 'PG14', representative_rack e.g. '3110') based on most common.
+    Reusable by both 01 (LV Portal) and 02 (Slack) tools so the Dashboard sees unified PG tracking.
+    Falls back to PG14 / 3110 if nothing useful is found.
+    """
+    import pandas as pd
+    import re
+    from collections import Counter
+    from pathlib import Path
+
+    rack_nums = []
+    for p in file_paths or []:
+        try:
+            p = str(p)
+            if not Path(p).exists():
+                continue
+            xl = pd.ExcelFile(p)
+            for sheet_name in xl.sheet_names:
+                try:
+                    df = pd.read_excel(p, sheet_name=sheet_name)
+                    for col in df.columns:
+                        col_l = str(col).lower()
+                        if any(k in col_l for k in ("device", "source", "rack", "host", "remote", "hostname")):
+                            for val in df[col].dropna().astype(str):
+                                m = re.search(r"r(\d{3,4})", val.lower())
+                                if m:
+                                    rack_nums.append(m.group(1).zfill(4))
+                                else:
+                                    m2 = re.search(r"\b(\d{4})\b", val)
+                                    if m2 and 1000 < int(m2.group(1)) < 9999:
+                                        rack_nums.append(m2.group(1))
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    if not rack_nums:
+        return "PG14", "3110"
+
+    pgs = [derive_placement_group(r) for r in rack_nums]
+    valid_pgs = [pg for pg in pgs if isinstance(pg, str) and pg.startswith("PG")]
+    most_pg = Counter(valid_pgs).most_common(1)
+    placement = most_pg[0][0] if most_pg else "PG14"
+
+    most_rack = Counter(rack_nums).most_common(1)[0][0]
+    return placement, most_rack

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from utils.data_logger import log_errors
 from utils.t1_to_t0_formatter import format_report
-from utils.hsg17_models import derive_placement_group
+from utils.hsg17_models import derive_placement_and_rack_from_files
 
 st.set_page_config(page_title="HSG17 T1-to-T0 Formatter", page_icon="🖥️", layout="wide")
 
@@ -106,37 +106,8 @@ if run_btn and lv_file and cutsheet_files:
             # ====================== SILENT CENTRAL LOGGING (unchanged) ======================
             try:
                 source_name = lv_file.name
-                placement = "PG14"
-                rack = "3110"
-                try:
-                    import pandas as pd
-                    import re
-                    from collections import Counter
-                    if lv_tmp.exists():
-                        lv_df_dict = pd.read_excel(lv_tmp, sheet_name=None)
-                        rack_nums = []
-                        for sheet_name, sheet_df in lv_df_dict.items():
-                            for col in sheet_df.columns:
-                                col_l = str(col).lower()
-                                if 'device' in col_l or 'source' in col_l:
-                                    for val in sheet_df[col].dropna().astype(str):
-                                        m = re.search(r'r(\d{3,4})', val.lower())
-                                        if m:
-                                            rack_nums.append(m.group(1).zfill(4))
-                                        else:
-                                            m2 = re.search(r'\b(\d{4})\b', val)
-                                            if m2 and 1000 < int(m2.group(1)) < 9999:
-                                                rack_nums.append(m2.group(1))
-                        if rack_nums:
-                            pgs = [derive_placement_group(r) for r in rack_nums]
-                            most_common = Counter(pgs).most_common(1)[0][0]
-                            if most_common and most_common.startswith('PG'):
-                                placement = most_common
-                            most_common_rack = Counter(rack_nums).most_common(1)[0][0]
-                            if most_common_rack:
-                                rack = most_common_rack
-                except Exception:
-                    pass
+                # Use shared derivation so 01 and 02 produce consistent PG/rack for unified dashboard tracking
+                placement, rack = derive_placement_and_rack_from_files([str(lv_tmp)] + cuts_tmp_paths)
 
                 for cat_key, cnt in counts.items():
                     if cnt > 0:

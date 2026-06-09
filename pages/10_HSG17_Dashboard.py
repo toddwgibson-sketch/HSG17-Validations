@@ -25,25 +25,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ====================== BEAUTIFUL C-SUITE STYLING ======================
+st.title("📊 HSG17 Dashboard")
+st.caption("Current State • Placement Groups • Progress to Zero")
+
+# ====================== DASHBOARD STYLING (cards + panels) ======================
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #0b1120 !important;
-    }
-    .stApp .main-header,
-    .main-header {
-        font-size: 3.2rem !important;
-        font-weight: 700;
-        margin-bottom: 0.1rem;
-        line-height: 1.1;
-        color: #f1f5f9;
-    }
-    .sub-header {
-        font-size: 1.0rem;
-        margin-bottom: 1.2rem;
-        color: #94a3b8;
-    }
     .section-header {
         font-size: 1.25rem;
         font-weight: 600;
@@ -207,9 +194,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<p class="main-header">HSG17 Dashboard</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Current State • Placement Groups • Progress to Zero</p>', unsafe_allow_html=True)
-
 DATA_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
 
 @st.cache_data(ttl=30)
@@ -336,7 +320,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
-    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack tool)</div>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:

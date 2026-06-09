@@ -205,12 +205,11 @@ def highlight_mismatch_pairs(wb, log=lambda *_: None):
 st.set_page_config(page_title="HSG17 Slack Formatter", page_icon="🖥️", layout="wide")
 
 st.markdown("""
-<div style="background-color: #0d1117; padding: 20px; border-radius: 8px; color: white; display: flex; align-items: center; gap: 15px;">
-    <span style="font-size: 42px;">💻</span>
-    <h1 style="margin: 0; font-size: 28px; font-weight: 700;">HSG17 Slack Formatter</h1>
+<div style="background-color: #0d1117; padding: 25px 20px; border-radius: 8px; color: white; display: flex; align-items: center; gap: 20px;">
+    <span style="font-size: 48px;">💻</span>
+    <h1 style="margin: 0; font-size: 32px; font-weight: 700;">HSG17 Slack Formatter</h1>
 </div>
 """, unsafe_allow_html=True)
-
 st.markdown("""
 **How to use:**
 1. Upload your **Cutsheet** (Installation Sheet)

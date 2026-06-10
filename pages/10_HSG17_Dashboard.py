@@ -405,7 +405,7 @@ with col4:
 
 st.divider()
 
-st.markdown('<div class="section-header">Error Breakdown by Placement Group (respects sidebar filters)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Error Breakdown by Placement Group </div>', unsafe_allow_html=True)
 
 CAT_COLORS = {
     "LLDP Mismatch + Link Down": "#e74c3c",
@@ -520,7 +520,7 @@ else:
 
 st.divider()
 
-st.markdown('<div class="section-header">Errors by Category × Rack (per Placement Group, respects sidebar filters)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Errors by Category × GPU Rack </div>', unsafe_allow_html=True)
 
 if not current.empty:
     # New design: one table per Placement Group

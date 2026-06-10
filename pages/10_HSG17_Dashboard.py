@@ -26,7 +26,7 @@ st.set_page_config(
 )
 
 st.title("📊 HSG17 Dashboard")
-st.caption("Current State • Placement Groups • Progress to Zero")
+st.caption("Captures Current Status/Changes -1")
 
 # ====================== DASHBOARD STYLING (cards + panels) ======================
 st.markdown("""
@@ -359,7 +359,7 @@ if DATA_FILE.exists():
 
 st.divider()
 
-st.markdown('<div class="section-header">Executive Snapshot (respects sidebar filters)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Executive Snapshot </div>', unsafe_allow_html=True)
 
 col1, col2, col3, col4 = st.columns(4)
 

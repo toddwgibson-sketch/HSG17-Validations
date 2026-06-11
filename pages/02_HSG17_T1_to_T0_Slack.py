@@ -105,7 +105,7 @@ div[data-testid="stButton"] button[kind="primary"]:hover {
 """, unsafe_allow_html=True)
 
 st.markdown(
-    "<div style='font-size: 1.15rem; font-weight: 600; margin-bottom: 0.1rem;'>"
+    "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
     "Cutsheet (Installation Sheet)"
     "</div>",
     unsafe_allow_html=True,
@@ -119,7 +119,7 @@ cutsheet_uploader = st.file_uploader(
 )
 
 st.markdown(
-    "<div style='font-size: 1.15rem; font-weight: 600; margin-bottom: 0.1rem;'>"
+    "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
     "Slack Report Excel files"
     "</div>",
     unsafe_allow_html=True,

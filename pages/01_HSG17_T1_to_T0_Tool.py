@@ -28,26 +28,41 @@ st.caption("")
 
 st.markdown("""
 **How to use:**
-1. Upload your **LV Portal Validation Export** (.xlsx / .xlsm)
-2. Upload the corresponding **Master Cutsheet / Allconnections** file(s)
+1. Upload your **Master Cutsheet(s) / Allconnections**
+2. Upload the **LV Portal Validation Export** (.xlsx / .xlsm)
 3. Click **Generate Formatted Report**
 
 The formatted report will be available for immediate download.
 """)
 
-# ── Uploaders (stacked vertically) ───────────────────────────────────────────
-lv_file = st.file_uploader(
-    "LV Portal Validation Export (.xlsx / .xlsm)",
-    type=["xlsx", "xlsm"],
-    accept_multiple_files=False,
-    help="The export containing the error sheets (Optics, FEC, Interface Down, ...)"
+# ── Uploaders (stacked vertically, cutsheet first for uniformity) ────────────
+# Larger labels to match page 02
+st.markdown(
+    "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
+    "Upload Cutsheet"
+    "</div>",
+    unsafe_allow_html=True,
 )
-
 cutsheet_files = st.file_uploader(
-    "Master Cutsheet(s) / Allconnections",
+    "Upload Cutsheet",
     type=["xlsx", "xlsm"],
     accept_multiple_files=True,
+    label_visibility="collapsed",
     help="One or more cutsheet files for enrichment"
+)
+
+st.markdown(
+    "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
+    "Upload LV Portal Validation"
+    "</div>",
+    unsafe_allow_html=True,
+)
+lv_file = st.file_uploader(
+    "Upload LV Portal Validation",
+    type=["xlsx", "xlsm"],
+    accept_multiple_files=False,
+    label_visibility="collapsed",
+    help="The export containing the error sheets (Optics, FEC, Interface Down, ...)"
 )
 
 # Blue primary button (default professional look for the main LV Portal tool)

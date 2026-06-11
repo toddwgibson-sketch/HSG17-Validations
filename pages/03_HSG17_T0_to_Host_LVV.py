@@ -33,8 +33,8 @@ st.caption("")
 
 st.markdown("""
 **How to use:**
-1. Upload your **LV Portal Validation Result(s)** (.xlsx / .xlsm) — the validationFailureResults file(s) containing T0-to-Host error sheets
-2. Upload the **Combined Cutsheet / Allconnections** file(s)
+1. Upload your **Combined Cutsheet / Allconnections** file(s)
+2. Upload your **LV Portal Validation Result(s)** (.xlsx / .xlsm) — the validationFailureResults file(s) containing T0-to-Host error sheets
 3. Click **Generate Formatted Report**
 
 The formatted report(s) will be available for immediate download.
@@ -56,33 +56,33 @@ div[data-testid="stButton"] button[kind="primary"]:hover {
 </style>
 """, unsafe_allow_html=True)
 
-# Larger labels (consistent with recent updates on other pages)
+# Larger labels to match page 02
 st.markdown(
     "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
-    "LV Portal Validation Result(s) (.xlsx / .xlsm)"
-    "</div>",
-    unsafe_allow_html=True,
-)
-validation_files = st.file_uploader(
-    "LV Portal Validation Result(s) (.xlsx / .xlsm)",
-    type=["xlsx", "xlsm"],
-    accept_multiple_files=True,
-    label_visibility="collapsed",
-    help="The validation result export(s) containing T0-to-Host error sheets (LLDP, Optic, FEC, Interface Down, etc.)"
-)
-
-st.markdown(
-    "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
-    "Combined Cutsheet(s) / Allconnections"
+    "Upload Cutsheet"
     "</div>",
     unsafe_allow_html=True,
 )
 cutsheet_files = st.file_uploader(
-    "Combined Cutsheet(s) / Allconnections",
+    "Upload Cutsheet",
     type=["xlsx", "xlsm"],
     accept_multiple_files=True,
     label_visibility="collapsed",
     help="The QFABT0toHOST_allconnections.xlsx or equivalent combined cutsheet"
+)
+
+st.markdown(
+    "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
+    "Upload LV Portal Validation"
+    "</div>",
+    unsafe_allow_html=True,
+)
+validation_files = st.file_uploader(
+    "Upload LV Portal Validation",
+    type=["xlsx", "xlsm"],
+    accept_multiple_files=True,
+    label_visibility="collapsed",
+    help="The validation result export(s) containing T0-to-Host error sheets (LLDP, Optic, FEC, Interface Down, etc.)"
 )
 
 run_btn = st.button(

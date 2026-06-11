@@ -106,12 +106,12 @@ div[data-testid="stButton"] button[kind="primary"]:hover {
 
 st.markdown(
     "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
-    "Cutsheet (Installation Sheet)"
+    "Upload Cutsheet"
     "</div>",
     unsafe_allow_html=True,
 )
 cutsheet_uploader = st.file_uploader(
-    "Cutsheet (Installation Sheet)",
+    "Upload Cutsheet",
     type=["xlsx", "xls"],
     accept_multiple_files=False,
     label_visibility="collapsed",
@@ -120,12 +120,12 @@ cutsheet_uploader = st.file_uploader(
 
 st.markdown(
     "<div style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.15rem;'>"
-    "Slack Report Excel files"
+    "Upload Slack Report"
     "</div>",
     unsafe_allow_html=True,
 )
 input_uploaders = st.file_uploader(
-    "Slack Report Excel files",
+    "Upload Slack Report",
     type=["xlsx", "xls"],
     accept_multiple_files=True,
     label_visibility="collapsed",

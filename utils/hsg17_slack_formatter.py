@@ -755,10 +755,11 @@ def process_file(input_path, output_path, cut_df, log):
     for sname in wb.sheetnames:
         ws_tmp = wb[sname]
         hdr = [ws_tmp.cell(row=1, column=c).value for c in range(1, ws_tmp.max_column+1)]
-        if 'Rack' not in hdr:
+        # Support both legacy 'Rack' and the v2 'Act. Rack' (used in Downlinks/Mismatches after the A-side rename)
+        if 'Rack' not in hdr and 'Act. Rack' not in hdr:
             tab_rack[sname] = {}
             continue
-        rack_col = hdr.index('Rack') + 1
+        rack_col = (hdr.index('Act. Rack') + 1 if 'Act. Rack' in hdr else hdr.index('Rack') + 1)
         counts = {}
         for r in range(2, ws_tmp.max_row + 1):
             val = ws_tmp.cell(row=r, column=rack_col).value

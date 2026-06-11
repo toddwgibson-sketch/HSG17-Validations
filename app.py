@@ -25,11 +25,16 @@ slack_tool = st.Page(
     title="HSG17 Slack Tool",
     icon="🧰",
 )
+t0_host_lvv = st.Page(
+    "pages/03_HSG17_T0_to_Host_LVV.py",
+    title="HSG17 T0-to-Host LVV",
+    icon="🖥️",
+)
 dashboard = st.Page(
     "pages/10_HSG17_Dashboard.py",
     title="HSG17 Dashboard",
     icon="📊",
 )
 
-pg = st.navigation([t0_tool, slack_tool, dashboard])
+pg = st.navigation([t0_tool, slack_tool, t0_host_lvv, dashboard])
 pg.run()

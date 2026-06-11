@@ -229,7 +229,7 @@ hsg17_df = df[df['hall'] == "HSG17"].copy()
 
 if hsg17_df.empty:
     st.warning("No HSG17 data logged yet.")
-    st.info("Run the T0-to-Host tool (in the other tab) to log some issues from an LV export + cutsheets. The dashboard will then show current state + deltas per Placement Group.")
+    st.info("Run one of the HSG17 tools (01 T1-to-T0 LVV, 02 Slack, or 03 T0-to-Host LVV) to log issues. The dashboard shows current state + deltas per Placement Group.")
     st.stop()
 
 # --- Sidebar Filters (more interactive development for the dashboard) ---
@@ -320,7 +320,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
-    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack tool)</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:

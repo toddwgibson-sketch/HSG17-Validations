@@ -41,17 +41,17 @@ The formatted report(s) will be available for immediate download.
 The counts are silently logged for the HSG17 Dashboard (same as the other tools).
 """)
 
-# Pink primary button (distinct for T0-to-Host LVV)
+# Green primary button (distinct for T0-to-Host LVV, avoids clashing with red Slack button)
 st.markdown("""
 <style>
 div[data-testid="stButton"] button[kind="primary"] {
-    background-color: #e91e63 !important;
-    border-color: #e91e63 !important;
+    background-color: #10b981 !important;
+    border-color: #10b981 !important;
     color: white !important;
 }
 div[data-testid="stButton"] button[kind="primary"]:hover {
-    background-color: #c2185b !important;
-    border-color: #c2185b !important;
+    background-color: #059669 !important;
+    border-color: #059669 !important;
 }
 </style>
 """, unsafe_allow_html=True)

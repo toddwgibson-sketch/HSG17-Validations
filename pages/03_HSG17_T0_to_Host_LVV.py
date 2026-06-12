@@ -126,7 +126,6 @@ if run_btn and validation_files and cutsheet_files:
             # Logging (unified with the other tools)
             try:
                 source_name = ", ".join([f.name for f in validation_files])
-                placement, rack = derive_placement_and_rack_from_files([combined_path] + val_tmp_paths)
 
                 for out_p in output_paths:
                     # Count rows in the main output sheets for dashboard categories
@@ -141,6 +140,11 @@ if run_btn and validation_files and cutsheet_files:
                             cat_counts["FEC_BER Errors"] = wb["Fec Errors"].max_row - 1
                         if "Interface Down Errors" in wb.sheetnames:
                             cat_counts["Interface Down Errors"] = wb["Interface Down Errors"].max_row - 1
+
+                        # Derive placement/rack from the *produced* file (has the actual error rows with populated RackA from cutsheet).
+                        # This ensures GPU racks (e.g. 2617) from T0-to-Host validation results are correctly captured
+                        # so the dashboard's "Errors by Category × GPU Rack" section picks them up.
+                        placement, rack = derive_placement_and_rack_from_files([str(out_p)])
 
                         for cat_name, cnt in cat_counts.items():
                             if cnt > 0:

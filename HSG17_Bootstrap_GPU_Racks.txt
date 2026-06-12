@@ -1,0 +1,764 @@
+
+HSG17 - Bootstrap Sequence
+Created by Alaknanda Agrawal, last updated by Mayank Vishnoi on Apr 28, 2026 • 5 minute read
+1.Rack Count
+Role Rack Count Notes Device Count
+GPU GB300 224 18 compute trays per rack,
+72 GPUs per rack
+16,128
+QFABIP 1 Inter Planar Rack 8
+QFABT0 64 8 devices per rack
+128 devices per plane
+512
+QFABT1 32 8 devices per rack
+64 devices per plane
+256
+Total 321
+2. Number of Connections
+Tier Number of connections per plane Total number of connections whole
+fabric
+Total number of connections
+per placement group
+qfabt0 to
+GPUs
+126 x 200G on each switch for GB300.
+126 x 128 (#of qfabt0) = 16128
+connections
+16128 x 4= 64512 (200G connections) 2016
+qfabt0 to
+qfabt1
+64 x 400G ports on each switch.
+64 x 128 (#of qfabt0) = 8192 connections
+8192 x 4= 32768(400G connections) 1024
+qfabt1 to
+IPs
+32 x 25G ports on each switch.
+32 x 8= 256
+256 (25G connection) N/A
+3. Bootstrap sequence
+1. Bootstrap QFABT1 racks
+2. Bootstrap IPR rack
+3. Bootstrap QFABT0 racks based on placement groups
+4. Validate QFABT0 <> QFABT1 , place QFABT0 in-service
+5. Repeat step 3 and 4 for all placement groups, there are 32 placement groups
+6. Place QFABT1 devices in-service.
+4.Placement Group & Racks
+Placement
+Group
+Activity Rack SKU Rack
+position
+Total
+Racks
+CFAB
+block
+DH
+sector
+ORACLE INTERNAL
+5/28/26, 9:16 PM HSG17 - Bootstrap Sequence - Cluster Networking - ALM Confluence
+https://confluence.oraclecorp.com/confluence/display/GPU/HSG17+-++Bootstrap+Sequence 1/6
+N/A AUX racks
+are
+bootstrapped
+aux.02
+aux.01
+5920
+6002
+2 N/A
+201 Bootstrap IPR
+rack
+net.ad_spc4_planar_qfab_ipr_1.01 5911 1 1
+151 QFABT1
+spine racks 
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+5708
+5709
+5710
+5711
+5712
+5713
+5714
+5715
+8 1 DH-102
+152 QFABT1
+spine racks 
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+5807
+5808
+5809
+5810
+5811
+5812
+5813
+5814
+8 1 DH-102
+153 QFABT1
+spine racks 
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+5907
+5908
+5909
+5910
+5912
+5913
+5914
+5915
+8 1 DH-102
+154 QFABT1
+spine racks 
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+net.ad_spc4_planar_qfab_t1_1.01
+6007
+6008
+6009
+6010
+6011
+6012
+6013
+6014
+8 1 DH-102
+1 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+0309
+0408
+0101
+0102
+0103
+0201
+0202
+0203
+0204
+9 17 DH-001
+2 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+0104
+0105
+0106
+0107
+0205
+0206
+0207
+0312
+0411
+9 17 DH-001
+3 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+0502
+0503
+0504
+0602
+0603
+0604
+0605
+0807
+0907
+9 18 DH-002
+4 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+0505
+0506
+0507
+0508
+0606
+0607
+0608
+0812
+0912
+9 18 DH-002
+5/28/26, 9:16 PM HSG17 - Bootstrap Sequence - Cluster Networking - ALM Confluence
+https://confluence.oraclecorp.com/confluence/display/GPU/HSG17+-++Bootstrap+Sequence 2/6
+5 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+1010
+1110
+1302
+1303
+1304
+1402
+1403
+1404
+1405
+9 19 DH-002
+6 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+1014
+1114
+1305
+1306
+1307
+1308
+1406
+1407
+1408
+9 19 DH-002
+7 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+1502
+1503
+1504
+1602
+1603
+1604
+1605
+1807
+1907
+9 20 DH-003
+8 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+1505
+1506
+1507
+1508
+1606
+1607
+1608
+1812
+1912
+9 20 DH-003
+9 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+2010
+2110
+2302
+2303
+2304
+2402
+2403
+2404
+2405
+9 21 DH-003
+10 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+2014
+2114
+2305
+2306
+2307
+2308
+2406
+2407
+2408
+9 21 DH-003
+11 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+2506
+2507
+2508
+2605
+2606
+2607
+2608
+2814
+2914
+9 22 DH-004
+12 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+2502
+2503
+2504
+2505
+2602
+2603
+2604
+2809
+2909
+9 22 DH-004
+13 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+3014
+3114
+3306
+9 23 DH-004
+5/28/26, 9:16 PM HSG17 - Bootstrap Sequence - Cluster Networking - ALM Confluence
+https://confluence.oraclecorp.com/confluence/display/GPU/HSG17+-++Bootstrap+Sequence 3/6
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+3307
+3308
+3405
+3406
+3407
+3408
+14 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+3010
+3110
+3302
+3303
+3304
+3305
+3402
+3403
+3404
+9 23 DH-004
+15 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+3506
+3507
+3508
+3605
+3606
+3607
+3608
+3814
+3914
+9 24 DH-005
+16 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+3502
+3503
+3504
+3505
+3602
+3603
+3604
+3809
+3909
+9 24 DH-005
+17 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+4014
+4114
+4306
+4307
+4308
+4405
+4406
+4407
+4408
+9 25 DH-005
+18 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+4010
+4110
+4302
+4303
+4304
+4305
+4402
+4403
+4404
+9 25 DH-005
+19 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+4502
+4503
+4504
+4602
+4603
+4604
+4605
+4807
+4907
+9 26 DH-101
+20 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+4505
+4506
+4507
+4508
+4606
+4607
+4608
+4812
+4912
+9 26 DH-101
+21 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+5010
+5110
+5302
+5303
+5304
+5402
+5403
+9 27 DH-101
+5/28/26, 9:16 PM HSG17 - Bootstrap Sequence - Cluster Networking - ALM Confluence
+https://confluence.oraclecorp.com/confluence/display/GPU/HSG17+-++Bootstrap+Sequence 4/6
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+5404
+5405
+22 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+5014
+5114
+5305
+5306
+5307
+5308
+5406
+5407
+5408
+9 27 DH-101
+23 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+6702
+6703
+6704
+6802
+6803
+6804
+6805
+7007
+7107
+9 28 DH-103
+24 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+6705
+6706
+6707
+6708
+6806
+6807
+6808
+7012
+7112
+9 28 DH-103
+25 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+7210
+7310
+7502
+7503
+7504
+7602
+7603
+7604
+7605
+9 29 DH-103
+26 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+7214
+7314
+7505
+7506
+7507
+7508
+7606
+7607
+7608
+9 29 DH-103
+27 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+7706
+7707
+7708
+7805
+7806
+7807
+7808
+8014
+8114
+9 30 DH104
+28 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+7702
+7703
+7704
+7705
+7802
+7803
+7804
+8009
+8109
+9 30 DH104
+29 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+8214
+8314
+8506
+8507
+8508
+8605
+8606
+8607
+8608
+9 31 DH104
+5/28/26, 9:16 PM HSG17 - Bootstrap Sequence - Cluster Networking - ALM Confluence
+https://confluence.oraclecorp.com/confluence/display/GPU/HSG17+-++Bootstrap+Sequence 5/6
+30 net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+8210
+8310
+8502
+8503
+8504
+8505
+8602
+8603
+8604
+9 31 DH104
+31 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+8706
+8707
+8708
+8805
+8806
+8807
+8808
+9018
+9118
+9 32 DH105
+32 GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+GPU_GB300_NVL72_R.03
+net.ad_spc4_planar_qfab_t0_1.01
+net.ad_spc4_planar_qfab_t0_1.01
+8702
+8703
+8704
+8705
+8802
+8803
+8804
+9013
+9113
+9 32 DH105
+No labels
+5/28/26, 9:16 PM HSG17 - Bootstrap Sequence - Cluster Networking - ALM Confluence
+https://confluence.oraclecorp.com/confluence/display/GPU/HSG17+-++Bootstrap+Sequence 6/6

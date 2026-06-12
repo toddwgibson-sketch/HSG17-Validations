@@ -626,46 +626,6 @@ else:
 
 st.divider()
 
-st.markdown('<div class="section-header">Errors by Category × GPU Rack </div>', unsafe_allow_html=True)
-
-if not current.empty:
-    # New design: one table per Placement Group
-    # rows: error_category, columns: rack (within the PG)
-    # Only GPU racks (from your HSG17 - Placement Groups.txt)
-    for bldg in sorted(current['building'].dropna().unique()):
-        sub = current[current['building'] == bldg]
-        if 'rack' in sub.columns:
-            sub = sub[sub['rack'].apply(is_gpu_rack)]
-        if sub.empty:
-            continue
-        sub_pivot = (
-            sub.pivot_table(
-                index="error_category",
-                columns="rack",
-                values="count",
-                aggfunc="sum",
-                fill_value=0
-            )
-            .astype(int)
-        )
-        sub_pivot["Total"] = sub_pivot.sum(axis=1)
-        sub_pivot = sub_pivot.sort_values("Total", ascending=False)
-        sub_pivot.loc["TOTAL"] = sub_pivot.sum()
-
-        st.markdown('<div class="rack-panel">', unsafe_allow_html=True)
-        st.markdown(f"<div style='font-weight:600; color:#e0f2fe; margin: 2px 0 6px;'>{bldg}</div>", unsafe_allow_html=True)
-        st.dataframe(
-            sub_pivot,
-            width="stretch",
-            column_config={
-                col: st.column_config.NumberColumn(col, format="%d") 
-                for col in sub_pivot.columns
-            }
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-
-st.divider()
-
 # Progress Trend moved to bottom as requested (full width, pie removed)
 st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
 

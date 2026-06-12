@@ -520,6 +520,112 @@ else:
 
 st.divider()
 
+# --- GPU-specific cards (distinct look from regular PG cards) ---
+st.markdown('<div class="section-header">GPU Rack Breakdown </div>', unsafe_allow_html=True)
+
+GPU_GRADIENTS = [
+    ("#14b8a6", "#134e4b"),  # teal
+    ("#4ade80", "#166534"),  # lime green
+    ("#67e8f9", "#164e63"),  # cyan
+    ("#a5f3fc", "#0e7490"),  # light cyan
+    ("#5eead4", "#134e4b"),  # turquoise
+]
+
+if not current.empty:
+    gpu_deltas = current_with_deltas[current_with_deltas['rack'].apply(is_gpu_rack)].copy() if 'rack' in current_with_deltas.columns else pd.DataFrame()
+    if not gpu_deltas.empty:
+        gpu_racks = sorted(gpu_deltas['rack'].dropna().unique())
+        CARDS_PER_ROW = 5
+
+        category_order = [c for c in CAT_LABELS.keys() if c in gpu_deltas['error_category'].unique()]
+
+        for start_idx in range(0, len(gpu_racks), CARDS_PER_ROW):
+            row_racks = gpu_racks[start_idx : start_idx + CARDS_PER_ROW]
+            cols = st.columns(CARDS_PER_ROW)
+
+            for i, rack in enumerate(row_racks):
+                rack_deltas = gpu_deltas[gpu_deltas['rack'] == rack]
+                bldg = rack_deltas['building'].iloc[0] if len(rack_deltas) > 0 else ""
+
+                cat_current = {}
+                cat_delta = {}
+                for _, row in rack_deltas.iterrows():
+                    cat = row['error_category']
+                    cat_current[cat] = row['current']
+                    cat_delta[cat] = row['delta']
+
+                rack_total = sum(cat_current.values())
+
+                valid_deltas = [d for d in cat_delta.values() if pd.notna(d)]
+                total_delta = sum(valid_deltas) if valid_deltas else None
+
+                total_str = str(rack_total)
+                if pd.notna(total_delta):
+                    delta_int = int(total_delta)
+                    delta_sign = f"({delta_int:+d})" if delta_int != 0 else ""
+                    delta_color = "green" if delta_int < 0 else "red"
+                    total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
+
+                bar_data = []
+                for cat in category_order:
+                    val = cat_current.get(cat, 0)
+                    if val > 0:
+                        bar_data.append({
+                            "Category": CAT_LABELS.get(cat, cat),
+                            "Count": val,
+                            "Color": CAT_COLORS.get(cat, "#7f8c8d")
+                        })
+
+                grad_idx = (start_idx + i) % len(GPU_GRADIENTS)
+                g1, g2 = GPU_GRADIENTS[grad_idx]
+
+                list_html = "<div style='margin-top:4px; font-size:0.82rem; line-height:1.25; color:#f8fafc;'>"
+                for cat in category_order:
+                    label = CAT_LABELS.get(cat, cat)
+                    val = cat_current.get(cat, 0)
+                    d = cat_delta.get(cat)
+                    color = CAT_COLORS.get(cat, "#7f8c8d")
+
+                    delta_html = ""
+                    if pd.notna(d):
+                        d_int = int(d)
+                        delta_color = "green" if d_int < 0 else "red"
+                        delta_str = f"({d_int:+d})"
+                        delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
+
+                    list_html += f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>{delta_html}<br>"
+                list_html += "</div>"
+
+                with cols[i]:
+                    # Differentiated look: cyan border, GPU icon, different gradient feel
+                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: 2px solid #67e8f9; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
+
+                    st.markdown(f'<span class="pg-pill" style="border-color:#67e8f9; background-color:#0f172a;">🖥️ GPU {rack}</span>', unsafe_allow_html=True)
+
+                    if bldg:
+                        st.markdown(f'<div style="font-size:0.7rem; opacity:0.75; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)
+
+                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
+
+                    if bar_data:
+                        total_for_bar = sum(d['Count'] for d in bar_data)
+                        bar_html = '<div style="height:16px; background: rgba(255,255,255,0.15); border-radius:999px; overflow:hidden; display:flex; margin:4px 0 6px; border:1px solid rgba(255,255,255,0.3);">'
+                        for d in bar_data:
+                            pct = (d['Count'] / total_for_bar * 100) if total_for_bar > 0 else 0
+                            bar_html += f'<div style="width:{pct}%; background:{d["Color"]}; height:100%;"></div>'
+                        bar_html += '</div>'
+                        st.markdown(bar_html, unsafe_allow_html=True)
+
+                    st.markdown('<div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; margin-top: 4px;">', unsafe_allow_html=True)
+                    st.markdown(list_html, unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                    st.markdown('</div>', unsafe_allow_html=True)
+else:
+    st.info("No GPU rack data after filters.")
+
+st.divider()
+
 st.markdown('<div class="section-header">Errors by Category × GPU Rack </div>', unsafe_allow_html=True)
 
 if not current.empty:

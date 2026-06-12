@@ -170,7 +170,7 @@ def build_combined_lookups(combined_path):
                 keep_idx.append(i)
                 out_header.append(out_name)
 
-        exact_A, pair_A, exact_B, pair_B = {}, {}, {}
+        exact_A, pair_A, exact_B, pair_B = {}, {}, {}, {}
         for r in rows:
             reduced = tuple(r[i] if i < len(r) else None for i in keep_idx)
             if ac_a_dev < len(r) and r[ac_a_dev]:
@@ -198,7 +198,7 @@ def build_combined_lookups(combined_path):
             "Found headers: " + repr(header)
         )
 
-    exact_A, pair_A, exact_B, pair_B = {}, {}, {}
+    exact_A, pair_A, exact_B, pair_B = {}, {}, {}, {}
     for r in rows:
         if a_dev_i < len(r) and r[a_dev_i]:
             port_val = r[a_port_i] if a_port_i < len(r) else None

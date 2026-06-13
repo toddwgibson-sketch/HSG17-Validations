@@ -574,7 +574,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
-    st.caption(f"Logged data is persisted on disk in `data/validation_error_log.xlsx`. Restarting the Streamlit app will **not** delete it. Current HSG17 entries in log: **{len(hsg17_df)}**.\n\n• Every new report automatically creates a full backup in `data/backups/` (keeps last 30).\n• Daily snapshots (full log + current state + your formatted report) go to `data/snapshots/` (triggered on first dashboard load of a new day).")
+    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. See Danger Zone below for persistence & backup details.")
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:
@@ -980,7 +980,12 @@ else:
 # Only relevant for testing.
 st.divider()
 st.markdown("### ⚠️ Danger Zone — Reset Data")
-st.caption("This permanently removes **all** HSG17 entries from the log. Only use when doing testing. Full backups are automatically kept in `data/backups/` and daily snapshots in `data/snapshots/`.")
+st.caption(f"""Logged data is persisted on disk in `data/validation_error_log.xlsx`. Restarting the Streamlit app will **not** delete it. Current HSG17 entries in log: **{len(hsg17_df)}**.
+
+• Every new report automatically creates a full backup in `data/backups/` (keeps last 30).
+• Daily snapshots (full log + current state + your formatted report) go to `data/snapshots/` (triggered on first dashboard load of a new day).
+
+This permanently removes **all** HSG17 entries from the log. Only use when doing testing.""")
 
 # Safer reset at the bottom
 confirm = st.checkbox("I confirm I want to permanently remove all HSG17 entries from the log.", key="confirm_reset")

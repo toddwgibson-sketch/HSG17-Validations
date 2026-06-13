@@ -494,30 +494,40 @@ def load_data():
             print(f"[DASHBOARD] Could not save upgraded log: {e}")
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
     if not df.empty:
-        # Treat stored timestamps as UTC (we log in UTC now) and convert to local tz of this computer for display.
-        # This makes "Last Updated" etc. match your local time. Historical data may shift if previously logged in another tz.
-        local_tz = datetime.now().astimezone().tzinfo
-        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert(local_tz)
+        # Treat stored timestamps as UTC (we log in UTC now).
+        # Keep as UTC internally for consistency (snapshots, calculations).
+        # We convert to local TZ only for UI display, filters, and "last updated" time.
+        if getattr(df['timestamp'].dt, 'tz', None) is None:
+            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
     return df.dropna(subset=['timestamp'])
 
 df = load_data()
 
-hsg17_df = df[df['hall'] == "HSG17"].copy()
+# Keep UTC version for snapshots (consistent "right" timezone in snapshot files, independent of when/where dashboard is viewed)
+hsg17_df_utc = df[df['hall'] == "HSG17"].copy()
+
+# Convert to local TZ for all UI/display (dates in picker, trend times, last updated, etc.)
+# This gives you the "right time zone" for viewing on this machine.
+local_tz = datetime.now().astimezone().tzinfo
+hsg17_df = hsg17_df_utc.copy()
+if not hsg17_df.empty:
+    hsg17_df['timestamp'] = hsg17_df['timestamp'].dt.tz_convert(local_tz)
 
 # Daily snapshot of the *full* current state (ignoring current sidebar filters)
 # This gives a restore point for the "as of end of day" view the cards are showing.
 # Runs once per calendar day on first load after midnight.
+# We snapshot the UTC version so times in the .xlsx are always canonical UTC.
 try:
-    if not hsg17_df.empty:
-        full_latest = get_latest_snapshot(hsg17_df)
-        save_daily_snapshot(hsg17_df, full_latest)
+    if not hsg17_df_utc.empty:
+        full_latest = get_latest_snapshot(hsg17_df_utc)
+        save_daily_snapshot(hsg17_df_utc, full_latest)
 
         # Also save the nice formatted stakeholder report for today (if not already)
         today_str = datetime.now().strftime("%Y-%m-%d")
         snap_dir = Path(__file__).parent.parent / "data" / "snapshots"
         formatted = snap_dir / f"HSG17_Summary_Report_{today_str}.xlsx"
         if not formatted.exists():
-            full_deltas = get_latest_with_deltas(hsg17_df)
+            full_deltas = get_latest_with_deltas(hsg17_df_utc)
             report_bytes = generate_hsg17_summary_report(full_deltas)
             formatted.write_bytes(report_bytes)
             print(f"[SNAPSHOT] Saved daily formatted report: {formatted.name}")
@@ -608,7 +618,9 @@ if not current.empty:
         ts = pd.Timestamp(ts)
         if ts.tz is None:
             ts = ts.tz_localize('UTC')
-        local_ts = ts.tz_convert(datetime.now().astimezone().tzinfo)
+        # Always convert to the current machine's local TZ for display
+        # (ensures LAST UPDATED / snapshot time shows in your right time zone)
+        local_ts = ts.tz_convert(local_tz)
         last_ts = local_ts.strftime("%Y-%m-%d %H:%M")
 
 def _metric_card(label, value, icon, c1, c2, sub=""):

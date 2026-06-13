@@ -494,7 +494,9 @@ def generate_hsg17_summary_report(current_with_deltas: pd.DataFrame) -> bytes:
             cell.border = thin_border
             cell.alignment = Alignment(horizontal="center")
 
-        gtotal = ws.cell(row=current_row, column=7, value=f"=SUM(G{data_start_row}:G{data_end_row})")
+        # Group total's Total Count column: sum the four category totals on *this row*
+        # (not summing the per-rack G column values). Keeps row sums and column sums clean.
+        gtotal = ws.cell(row=current_row, column=7, value=f"=SUM(C{current_row}:F{current_row})")
         gtotal.font = normal_font
         gtotal.border = thin_border
         gtotal.alignment = Alignment(horizontal="center")

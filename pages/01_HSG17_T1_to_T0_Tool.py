@@ -103,7 +103,7 @@ if run_btn and lv_file and cutsheet_files:
                 cuts_tmp_paths.append(str(p))
 
             # Call the exact original implementation
-            out_path, counts = format_report(str(lv_tmp), cuts_tmp_paths, interactive=False)
+            out_path, _ = format_report(str(lv_tmp), cuts_tmp_paths, interactive=False)
 
             # Read result
             out_bytes = out_path.read_bytes()
@@ -118,21 +118,19 @@ if run_btn and lv_file and cutsheet_files:
                 use_container_width=True
             )
 
-            # ====================== SILENT CENTRAL LOGGING (unchanged) ======================
+            # ====================== SILENT CENTRAL LOGGING ======================
+            # Read the *filtered* counts directly from the Summary tab of the produced report.
+            # This matches exactly the numbers visible in the report's Summary (excludes
+            # greyed-out rows, CT-off, -40 optics, etc.).
             try:
                 source_name = lv_file.name
-                # Use shared derivation so 01 and 02 produce consistent PG/rack for unified dashboard tracking
                 placement, rack = derive_placement_and_rack_from_files([str(lv_tmp)] + cuts_tmp_paths)
 
-                for cat_key, cnt in counts.items():
+                from utils.hsg17_models import extract_filtered_counts_from_summary
+                counts = extract_filtered_counts_from_summary(str(out_path))
+
+                for cat_name, cnt in counts.items():
                     if cnt > 0:
-                        cat_map = {
-                            "mispatches": "LLDP Mismatch + Link Down",
-                            "downlinks": "Interface Down Errors",
-                            "optics": "Optic Errors",
-                            "fec": "FEC_BER Errors"
-                        }
-                        cat_name = cat_map.get(cat_key, cat_key.title())
                         success = log_errors(
                             hall="HSG17",
                             rack_type="T1-T0",

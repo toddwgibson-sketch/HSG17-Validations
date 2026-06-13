@@ -35,42 +35,7 @@ from utils.hsg17_slack_formatter import (
 )
 
 
-def _count_issues_from_slack_inputs(paths: list[str]) -> dict:
-    """Count rows in the relevant error sheets from the raw Slack report inputs.
-    Uses the existing TAB_ALIASES to locate lldp / optics / interfaces / fec sheets.
-    Returns counts in the same keys the 01 tool uses so Dashboard stays unified.
-    """
-    counts = {"mispatches": 0, "optics": 0, "downlinks": 0, "fec": 0}
 
-    for p in paths or []:
-        try:
-            p = str(p)
-            xl = pd.ExcelFile(p)
-            sheet_names = xl.sheet_names
-
-            lldp_tab = find_tab(sheet_names, "lldp")
-            if lldp_tab:
-                df = pd.read_excel(p, sheet_name=lldp_tab)
-                counts["mispatches"] += len(df)
-
-            optics_tab = find_tab(sheet_names, "optics")
-            if optics_tab:
-                df = pd.read_excel(p, sheet_name=optics_tab)
-                counts["optics"] += len(df)
-
-            int_tab = find_tab(sheet_names, "interfaces")
-            if int_tab:
-                df = pd.read_excel(p, sheet_name=int_tab)
-                counts["downlinks"] += len(df)
-
-            fec_tab = find_tab(sheet_names, "combined_fec")
-            if fec_tab:
-                df = pd.read_excel(p, sheet_name=fec_tab)
-                counts["fec"] += len(df)
-        except Exception:
-            continue
-
-    return counts
 
 
 # --- Streamlit UI -----------------------------------------------------------
@@ -156,36 +121,6 @@ if run_btn and cutsheet_uploader and input_uploaders:
             all_files_for_derive = [str(cut_tmp)] + slack_tmp_paths
             placement, rack = derive_placement_and_rack_from_files(all_files_for_derive)
 
-            # Count issues from the raw inputs for the central log (unified with page 01)
-            raw_counts = _count_issues_from_slack_inputs(slack_tmp_paths)
-
-            # ====================== SILENT CENTRAL LOGGING (unified with 01) ======================
-            try:
-                source_name = ", ".join([f.name for f in input_uploaders])
-                cat_map = {
-                    "mispatches": "LLDP Mismatch + Link Down",
-                    "downlinks": "Interface Down Errors",
-                    "optics": "Optic Errors",
-                    "fec": "FEC_BER Errors",
-                }
-                for cat_key, cnt in raw_counts.items():
-                    if cnt > 0:
-                        cat_name = cat_map.get(cat_key, cat_key.title())
-                        success = log_errors(
-                            hall="HSG17",
-                            rack_type="T1-T0",
-                            building=placement,
-                            rack=rack,
-                            error_category=cat_name,
-                            count=int(cnt),
-                            source_file=source_name,
-                            processed_by="HSG17_T1toT0_Slack",
-                        )
-                        if not success:
-                            st.warning("Failed to write some log entries to the central file (see terminal).")
-            except Exception as log_err:
-                st.warning(f"Logging error: {log_err}")
-
             # --- Actual formatting using the reference logic (via utils) ---
             cut_df = load_cutsheet(str(cut_tmp))
             output_paths = []
@@ -200,6 +135,34 @@ if run_btn and cutsheet_uploader and input_uploaders:
                         output_paths.append(final_p)
                 except Exception as proc_err:
                     st.warning(f"Could not fully process {in_p.name}: {proc_err}")
+
+            # ====================== SILENT CENTRAL LOGGING (unified with 01 and 03) ======================
+            # We read the *filtered* counts directly from the Summary tab(s) of the
+            # produced report(s). This matches exactly the numbers visible in the
+            # report's own Summary (excludes greyed-out / filtered rows).
+            try:
+                source_name = ", ".join([f.name for f in input_uploaders])
+
+                from utils.hsg17_models import extract_filtered_counts_from_summary
+
+                for out_p in output_paths:
+                    counts = extract_filtered_counts_from_summary(str(out_p))
+                    for cat_name, cnt in counts.items():
+                        if cnt > 0:
+                            success = log_errors(
+                                hall="HSG17",
+                                rack_type="T1-T0",
+                                building=placement,
+                                rack=rack,
+                                error_category=cat_name,
+                                count=int(cnt),
+                                source_file=source_name,
+                                processed_by="HSG17_T1toT0_Slack",
+                            )
+                            if not success:
+                                st.warning("Failed to write some log entries to the central file (see terminal).")
+            except Exception as log_err:
+                st.warning(f"Logging error: {log_err}")
 
             if output_paths:
                 st.success(f"✅ {len(output_paths)} formatted report(s) ready for download.")

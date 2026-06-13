@@ -132,14 +132,28 @@ if run_btn and validation_files and cutsheet_files:
                     try:
                         wb = load_workbook(out_p)
                         cat_counts = {}
-                        if "Mismatch" in wb.sheetnames:
-                            cat_counts["LLDP Mismatch + Link Down"] = wb["Mismatch"].max_row - 1
-                        if "Optic Errors" in wb.sheetnames:
-                            cat_counts["Optic Errors"] = wb["Optic Errors"].max_row - 1
-                        if "Fec Errors" in wb.sheetnames:
-                            cat_counts["FEC_BER Errors"] = wb["Fec Errors"].max_row - 1
-                        if "Interface Down Errors" in wb.sheetnames:
-                            cat_counts["Interface Down Errors"] = wb["Interface Down Errors"].max_row - 1
+
+                        # Read the *filtered* counts directly from the Summary tab of the produced report.
+                        # This matches exactly what the user sees in the report's Summary
+                        # (excludes greyed-out rows for -40 optics, CT-off, "also interface down", etc.)
+                        if "Summary" in wb.sheetnames:
+                            summary_ws = wb["Summary"]
+                            for row in summary_ws.iter_rows(min_row=1, values_only=True):
+                                if row and len(row) >= 2 and row[0] and row[1] is not None:
+                                    cat = str(row[0]).strip().lower()
+                                    try:
+                                        cnt = int(row[1]) if not isinstance(row[1], str) else 0
+                                    except:
+                                        cnt = 0
+
+                                    if "mismatch" in cat or "lldp" in cat:
+                                        cat_counts["LLDP Mismatch + Link Down"] = cnt
+                                    elif "optic" in cat:
+                                        cat_counts["Optic Errors"] = cnt
+                                    elif "fec" in cat or "ber" in cat:
+                                        cat_counts["FEC_BER Errors"] = cnt
+                                    elif "interface down" in cat:
+                                        cat_counts["Interface Down Errors"] = cnt
 
                         # Derive placement/rack from the *produced* file (has the actual error rows with populated RackA from cutsheet).
                         # This ensures GPU racks (e.g. 2617) from T0-to-Host validation results are correctly captured

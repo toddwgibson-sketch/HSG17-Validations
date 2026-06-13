@@ -592,3 +592,48 @@ def derive_placement_and_rack_from_files(file_paths: list) -> tuple[str, str]:
 
     most_rack = Counter(rack_nums).most_common(1)[0][0]
     return placement, most_rack
+
+
+def extract_filtered_counts_from_summary(output_path: str) -> dict:
+    """Parse the Summary tab of a produced report and return the *filtered* counts
+    for the four standard dashboard categories.
+
+    This respects all the grey-out / exclusion logic inside the formatters
+    (CT-off rows, -40 dB optics, "also interface down", "not available", etc.).
+    The numbers returned will exactly match what appears in the report's
+    Summary sheet.
+    """
+    from openpyxl import load_workbook
+    from collections import defaultdict
+
+    try:
+        wb = load_workbook(output_path, data_only=True)
+        if "Summary" not in wb.sheetnames:
+            return {}
+
+        ws = wb["Summary"]
+        counts = {}
+
+        for row in ws.iter_rows(min_row=1, values_only=True):
+            if not row or not row[0]:
+                continue
+            name = str(row[0]).strip().lower()
+            # The Total column is usually the last one
+            total_val = row[-1] if len(row) > 1 and row[-1] is not None else 0
+            try:
+                cnt = int(total_val)
+            except (ValueError, TypeError):
+                cnt = 0
+
+            if "mismatch" in name or "lldp" in name:
+                counts["LLDP Mismatch + Link Down"] = cnt
+            elif "optic" in name:
+                counts["Optic Errors"] = cnt
+            elif "fec" in name or "ber" in name:
+                counts["FEC_BER Errors"] = cnt
+            elif "interface" in name and "down" in name:
+                counts["Interface Down Errors"] = cnt
+
+        return counts
+    except Exception:
+        return {}

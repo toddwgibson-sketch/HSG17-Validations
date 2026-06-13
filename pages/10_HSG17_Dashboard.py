@@ -934,61 +934,63 @@ st.divider()
 st.markdown('<div class="section-header">Progress Trend (Total Open Issues Over Time)</div>', unsafe_allow_html=True)
 
 if not filtered_df.empty:
-    # Aggregate total issues per logged run time (using the raw filtered log entries)
-    trend = (
-        filtered_df.groupby(filtered_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M'))['count']
-        .sum()
-        .reset_index()
-    )
-    trend.columns = ['Run Time', 'Total Issues']
+    # Compute the *total open issues at the time of each upload*.
+    # For each historical run time, take all data up to that point, apply the same
+    # "latest per (hall, building, rack, error_category)" logic used for the cards,
+    # and sum the counts. This shows the actual current open issues as of that upload.
+    run_times = sorted(filtered_df['timestamp'].unique())
+
+    records = []
+    for rt in run_times:
+        hist = filtered_df[filtered_df['timestamp'] <= rt]
+        latest_at_time = get_latest_snapshot(hist)
+        total_open = int(latest_at_time['count'].sum()) if not latest_at_time.empty else 0
+        records.append({
+            'Run Time': rt,
+            'Total Open Issues': total_open
+        })
+
+    trend = pd.DataFrame(records)
     trend = trend.sort_values('Run Time')
+    trend['Run Time Str'] = trend['Run Time'].dt.strftime('%Y-%m-%d %H:%M')
 
     # Full-width trend panel
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
-    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Issues Over Time (filtered runs)</div>", unsafe_allow_html=True)
-    # Trend chart - combo bar + line
+    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Total Open Issues at Time of Each Upload (filtered)</div>", unsafe_allow_html=True)
+    # Trend chart - line + area showing cumulative current state
     fig = go.Figure()
-    # Bars for each run
-    fig.add_trace(go.Bar(
-        x=trend['Run Time'],
-        y=trend['Total Issues'],
-        name='Issues per Run',
-        marker_color='#67e8f9',
-        opacity=0.7
-    ))
-    # Line + area on top (smooth trend)
+    # Line + area for the total open issues (current state) as of each upload
     fig.add_trace(go.Scatter(
-        x=trend['Run Time'],
-        y=trend['Total Issues'],
+        x=trend['Run Time Str'],
+        y=trend['Total Open Issues'],
         mode='lines+markers',
         line=dict(color='#22d3ee', width=3, shape='spline'),
         fill='tozeroy',
         fillcolor='rgba(34, 211, 238, 0.15)',
         marker=dict(size=6, color='#67e8f9', line=dict(width=1, color='#0b1120')),
-        name='Trend'
+        name='Total Open Issues'
     ))
     fig.update_layout(
         height=340,
         margin=dict(l=0, r=0, t=8, b=0),
         xaxis_title='Run Timestamp',
-        yaxis_title='Open Issues',
+        yaxis_title='Total Open Issues',
         plot_bgcolor='#0b1120',
         paper_bgcolor='#0b1120',
         font_color='#e2e8f0',
         xaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
         yaxis=dict(gridcolor='#1e2937', zerolinecolor='#334155'),
         hovermode='x unified',
-        barmode='overlay',
         showlegend=False
     )
-    fig.update_traces(hovertemplate='%{x}<br>%{y} issues<extra></extra>')
+    fig.update_traces(hovertemplate='%{x}<br>%{y} open issues<extra></extra>')
 
     # Export / Print pills for this panel
     tcols = st.columns([0.75, 0.25])
     with tcols[1]:
         bb1, bb2 = st.columns(2)
         with bb1:
-            csv = trend.to_csv(index=False).encode('utf-8')
+            csv = trend[['Run Time Str', 'Total Open Issues']].rename(columns={'Run Time Str': 'Run Time'}).to_csv(index=False).encode('utf-8')
             st.download_button("⤵", data=csv, file_name="hsg17_trend.csv", mime="text/csv", key="trend_csv_dl", use_container_width=True, help="Export trend data")
         with bb2:
             if st.button("🖨", key="trend_print", use_container_width=True, help="Print chart"):
@@ -996,6 +998,6 @@ if not filtered_df.empty:
     st.plotly_chart(fig, width="stretch", key="hsg17_trend", config={"displayModeBar": False})
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.caption("Total open issues over time (bars = per run, line/area = trend). Re-runs update the cards above; history is preserved for trends.")
+    st.caption("Total open issues (current state) over time. For each upload we take all data up to that point, apply the latest-per-rack logic used by the cards, and sum the counts. This shows how the overall open issues evolved.")
 else:
     st.info("No data for trend chart with current filters.")

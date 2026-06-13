@@ -499,7 +499,7 @@ def load_data():
     if not df.empty:
         # Treat stored timestamps as UTC (we log in UTC now).
         # Keep as UTC internally for consistency (snapshots, calculations).
-        # UI display, LAST UPDATED ("time snapshot"), date filters, etc. are converted to hardcoded Sydney time.
+        # UI display, LAST UPDATED (Sydney) ("time snapshot"), date filters, etc. are converted to hardcoded Sydney time.
         if getattr(df['timestamp'].dt, 'tz', None) is None:
             df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
     return df.dropna(subset=['timestamp'])
@@ -510,7 +510,7 @@ df = load_data()
 hsg17_df_utc = df[df['hall'] == "HSG17"].copy()
 
 # Hardcoded to Sydney time (Australia/Sydney) for all UI/display:
-# - LAST UPDATED / time snapshot
+# - LAST UPDATED (Sydney) / time snapshot
 # - Date range picker
 # - Trend run times
 # - Everything the user sees
@@ -624,7 +624,7 @@ if not current.empty:
         ts = pd.Timestamp(ts)
         if ts.tz is None:
             ts = ts.tz_localize('UTC')
-        # Hardcoded Sydney TZ for the "time snapshot" (LAST UPDATED)
+        # Hardcoded Sydney TZ for the "time snapshot"
         local_ts = ts.tz_convert(SYDNEY_TZ)
         last_ts = local_ts.strftime("%Y-%m-%d %H:%M")
 
@@ -653,7 +653,7 @@ with col2:
 with col3:
     st.markdown(_metric_card("RACK TYPES ACTIVE", str(active_rack_types), "🖥️", "#f59e0b", "#c2410f", "Unique rack types"), unsafe_allow_html=True)
 with col4:
-    st.markdown(_metric_card("LAST UPDATED", last_ts, "🕒", "#a855f7", "#6b21a8", "Latest processing run"), unsafe_allow_html=True)
+    st.markdown(_metric_card("Last Updated - Sydney Time", last_ts, "🕒", "#a855f7", "#6b21a8", "Latest processing run"), unsafe_allow_html=True)
 
 st.divider()
 

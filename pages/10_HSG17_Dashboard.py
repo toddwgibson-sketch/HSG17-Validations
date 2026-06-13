@@ -321,6 +321,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
+    st.caption(f"Logged data is persisted on disk in `data/validation_error_log.xlsx`. Restarting the Streamlit app will **not** delete it. Current HSG17 entries in log: **{len(hsg17_df)}**")
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:
@@ -333,8 +334,10 @@ if DATA_FILE.exists():
                 help="Download the full validation error log (all halls)"
             )
     with col2:
-        # Reset button for dashboard data (user requested for clearing test data)
-        if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
+        # Safer reset: requires explicit confirmation
+        confirm = st.checkbox("I confirm I want to permanently remove all HSG17 entries from the log.", key="confirm_reset")
+        if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", disabled=not confirm, key="reset_hsg17_data",
+                     help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
             try:
                 if DATA_FILE.exists():
                     df = pd.read_excel(DATA_FILE)

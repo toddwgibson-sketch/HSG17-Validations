@@ -148,7 +148,7 @@ if run_btn and validation_files and cutsheet_files:
 
                         for cat_name, cnt in cat_counts.items():
                             if cnt > 0:
-                                log_errors(
+                                success = log_errors(
                                     hall="HSG17",
                                     rack_type="T0-Host",
                                     building=placement,
@@ -158,10 +158,12 @@ if run_btn and validation_files and cutsheet_files:
                                     source_file=source_name,
                                     processed_by="HSG17_T0toHost_LVV",
                                 )
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                                if not success:
+                                    st.warning("One or more log entries failed to write to the central file (see terminal for details).")
+                    except Exception as log_err:
+                        st.warning(f"Failed to log some entries: {log_err}")
+            except Exception as log_err:
+                st.warning(f"Logging step encountered an error: {log_err}")
 
             if output_paths:
                 st.success(f"✅ {len(output_paths)} formatted T0-to-Host report(s) ready for download.")

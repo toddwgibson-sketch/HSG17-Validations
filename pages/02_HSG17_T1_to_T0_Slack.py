@@ -171,7 +171,7 @@ if run_btn and cutsheet_uploader and input_uploaders:
                 for cat_key, cnt in raw_counts.items():
                     if cnt > 0:
                         cat_name = cat_map.get(cat_key, cat_key.title())
-                        log_errors(
+                        success = log_errors(
                             hall="HSG17",
                             rack_type="T1-T0",
                             building=placement,
@@ -181,8 +181,10 @@ if run_btn and cutsheet_uploader and input_uploaders:
                             source_file=source_name,
                             processed_by="HSG17_T1toT0_Slack",
                         )
-            except Exception:
-                pass
+                        if not success:
+                            st.warning("Failed to write some log entries to the central file (see terminal).")
+            except Exception as log_err:
+                st.warning(f"Logging error: {log_err}")
 
             # --- Actual formatting using the reference logic (via utils) ---
             cut_df = load_cutsheet(str(cut_tmp))

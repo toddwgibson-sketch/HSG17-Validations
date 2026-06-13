@@ -133,7 +133,7 @@ if run_btn and lv_file and cutsheet_files:
                             "fec": "FEC_BER Errors"
                         }
                         cat_name = cat_map.get(cat_key, cat_key.title())
-                        log_errors(
+                        success = log_errors(
                             hall="HSG17",
                             rack_type="T1-T0",
                             building=placement,
@@ -143,8 +143,10 @@ if run_btn and lv_file and cutsheet_files:
                             source_file=source_name,
                             processed_by="HSG17_T1toT0_Gold"
                         )
-            except Exception:
-                pass
+                        if not success:
+                            st.warning("Failed to write some log entries to the central file (see terminal).")
+            except Exception as log_err:
+                st.warning(f"Logging error: {log_err}")
 
         finally:
             # Cleanup

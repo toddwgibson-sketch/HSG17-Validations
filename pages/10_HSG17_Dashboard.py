@@ -874,11 +874,11 @@ if not current.empty:
                 list_html += "</div>"
 
                 with cols[i]:
-                    # Differentiated look: cyan border, type-aware pill, different gradient feel
+                    # Differentiated look: cyan border, type-aware header, different gradient feel
                     pill_text = f"🖥️ {rack_type} {rack}" if rack_type != "GPU" else f"🖥️ {rack}"
                     st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: 2px solid #67e8f9; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
 
-                    st.markdown(f'<span class="pg-pill" style="border-color:#67e8f9; background-color:#0f172a; font-size:1.25rem; font-weight:600; padding:6px 14px;">{pill_text}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="font-size:1.25rem; font-weight:600; padding:6px 14px; margin-bottom:4px;">{pill_text}</div>', unsafe_allow_html=True)
 
                     if bldg:
                         st.markdown(f'<div style="font-size:0.7rem; opacity:0.75; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)

@@ -574,7 +574,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
-    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). See the Danger Zone at the very bottom for full details + exact restore steps if the log ever looks empty. Backups happen silently in the background (no list here). The main log file only appends when you actually process a new report; it is the full history, not a 'live current' table.")
+    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). Use the \"Download Fresh Backup\" button above for a quick timestamped copy (like a report). See Danger Zone at bottom if you ever need to restore. Backups happen silently in the background (no lists on page).")
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:
@@ -601,47 +601,55 @@ if DATA_FILE.exists():
         except Exception as e:
             st.warning(f"Could not generate summary report: {e}")
 
-    # Manual backup button - for peace of mind when you're worried about data loss
-    if "manual_backup_msg" not in st.session_state:
-        st.session_state.manual_backup_msg = None
+    # Manual "download the backup like a report" - direct, no flash, just the data + side-effect save to backups/.
+    # Per request: one click gives you the bloody data file (timestamped backup copy) to download immediately.
+    if "pending_backup" not in st.session_state:
+        st.session_state.pending_backup = None
 
-    if st.button("💾 Create Manual Full Backup + Snapshot RIGHT NOW", key="manual_backup_btn",
-                 help="Immediately creates a timestamped full copy of the entire log in data/backups/ AND a daily snapshot in data/snapshots/. Do this after important uploads or before rebooting if you're nervous."):
+    if st.button("📥 Download Fresh Backup (timestamped full log)", key="manual_backup_btn", width="stretch",
+                 help="Forces a fresh timestamped backup copy to data/backups/ right now and gives you a download button for the file (exactly like downloading a report). Use before reboots or after big uploads."):
         try:
             bpath = backup_log()
-            if bpath:
-                full_hsg17 = df[df['hall'] == "HSG17"].copy()
-                if not full_hsg17.empty:
-                    full_latest = get_latest_snapshot(full_hsg17)
-                    save_daily_snapshot(full_hsg17, full_latest)
-                    # also the nice formatted report for today
-                    today_str = datetime.now().strftime("%Y-%m-%d")
-                    snap_dir = Path(__file__).parent.parent / "data" / "snapshots"
-                    formatted = snap_dir / f"HSG17_Summary_Report_{today_str}.xlsx"
-                    if not formatted.exists():
-                        full_deltas = get_latest_with_deltas(full_hsg17)
-                        report_bytes = generate_hsg17_summary_report(full_deltas)
-                        formatted.write_bytes(report_bytes)
-                st.session_state.manual_backup_msg = f"Manual backup + snapshot created! Backup: {bpath.name}"
-                st.rerun()
+            if bpath and bpath.exists():
+                with open(bpath, "rb") as f:
+                    data = f.read()
+                st.session_state.pending_backup = (bpath.name, data)
+                # Also snapshot for full safety (background, no UI spam)
+                try:
+                    full_hsg17 = df[df['hall'] == "HSG17"].copy()
+                    if not full_hsg17.empty:
+                        full_latest = get_latest_snapshot(full_hsg17)
+                        save_daily_snapshot(full_hsg17, full_latest)
+                except Exception:
+                    pass
             else:
-                st.session_state.manual_backup_msg = "Manual backup failed: no log file to backup yet."
-                st.rerun()
+                st.session_state.pending_backup = ("failed", None)
         except Exception as e:
-            st.session_state.manual_backup_msg = f"Manual backup failed: {e}"
+            st.session_state.pending_backup = (f"error:{e}", None)
+
+    pb = st.session_state.get("pending_backup")
+    if pb:
+        name, data = pb
+        if name == "failed":
+            st.error("No log file to backup yet (process a report first).")
+        elif name.startswith("error"):
+            st.error(f"Backup failed: {name}")
+        elif data:
+            st.success(f"Backup ready — {name}")
+            st.download_button(
+                f"⬇️ Download {name}",
+                data=data,
+                file_name=name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch",
+                help="This is your fresh full backup copy. Save it like any report. Also saved in data/backups/."
+            )
+        if st.button("✖ dismiss", key="clear_pending_backup"):
+            st.session_state.pending_backup = None
             st.rerun()
 
-    if st.session_state.manual_backup_msg:
-        if "failed" in st.session_state.manual_backup_msg.lower():
-            st.error(st.session_state.manual_backup_msg)
-        else:
-            st.success(st.session_state.manual_backup_msg)
-        # clear after showing
-        st.session_state.manual_backup_msg = None
-
-    # Note: the full list of backups was removed from here per your request (ugly on page).
-    # Backups happen silently in background on every report.
-    # Only the latest is shown in the Danger Zone at bottom (for worst case).
+    # Note: no ugly lists of backups on the page (removed). Backups silent in bg + this manual.
+    # Only latest shown down in Danger Zone.
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -910,13 +918,13 @@ if not current.empty:
                 with cols[i]:
                     pill_text = f"🖥️ {rack_type} {rack}" if rack_type != "GPU" else f"🖥️ {rack}"
                     pill_color = bldg_pill_color.get(bldg, "#67e8f9")
-                    # Outer card with per-PG border on sides and bottom only (border-top: none to remove the top coloured line / empty pill bit above the dark pill). The dark top pill (rack name) is flush at the top, fully inside the bordered area.
-                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: #0f172a; color: white; border-left: 2px solid {pill_color}; border-right: 2px solid {pill_color}; border-bottom: 2px solid {pill_color}; border-top: none; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3); border-radius: 12px; overflow: hidden;">', unsafe_allow_html=True)
+                    # Outer: solid dark, per-PG border ONLY on left/right/bottom (top:none + padding:0 kills any top empty/yellow/coloured strip or cutoff above the pill). Dark pill (rack name + single emoji) sits flush at very top, fully inside the bordered area as requested.
+                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: #0f172a; color: white; border-left: 2px solid {pill_color}; border-right: 2px solid {pill_color}; border-bottom: 2px solid {pill_color}; border-top: none; padding: 0; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3); border-radius: 12px; overflow: hidden;">', unsafe_allow_html=True)
 
-                    # Top dark rounded pill with the rack name INSIDE it (single 🖥️), flush to top inside the bordered card (no top cut off).
-                    st.markdown(f'<div style="background: #1e2937; border-radius: 9999px; padding: 8px 16px; margin: 0 8px 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"> <span style="font-size:1.8rem; font-weight:700; color: white;">{pill_text}</span> </div>', unsafe_allow_html=True)
+                    # Top dark rounded pill INSIDE the bordered card, rack name here (single 🖥️), flush top with 0 top margin + outer no top pad. 1.25rem font for the pill text.
+                    st.markdown(f'<div style="background: #1e2937; border-radius: 9999px; padding: 8px 16px; margin: 0 8px 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"> <span style="font-size:1.25rem; font-weight:700; color: white;">{pill_text}</span> </div>', unsafe_allow_html=True)
 
-                    # Main content area
+                    # Main content area (sides padded here)
                     st.markdown('<div style="padding: 0 12px 8px;">', unsafe_allow_html=True)
 
                     if bldg:
@@ -937,7 +945,7 @@ if not current.empty:
                     st.markdown(list_html, unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
-                    # Bottom fill strip (per-PG color, matching the border)
+                    # Bottom fill strip (per-PG color, matches the border/outline)
                     st.markdown(f'<div style="height: 18px; background: linear-gradient(90deg, {pill_color}, #0f172a); border-radius: 0 0 8px 8px; margin: 8px -12px -8px;"></div>', unsafe_allow_html=True)
 
                     st.markdown('</div>', unsafe_allow_html=True)  # close main padding
@@ -1022,25 +1030,12 @@ else:
 # Moved the reset all the way to the bottom to reduce accidental clicks.
 # Only relevant for testing.
 st.divider()
-st.markdown("### ⚠️ Danger Zone — Reset Data")
-st.caption(f"""Logged data is persisted on disk in `data/validation_error_log.xlsx`. **Rebooting the app will NOT empty it** — the file lives on your disk.
+st.markdown("### ⚠️ Danger Zone — Reset Data (testing only)")
+st.caption("""Backups (full timestamped copies) are created silently in the background on every report and via the "Download Fresh Backup" button in Data Management above. Only the single latest is shown here for download.
 
-**If the dashboard ever shows no/empty data after reboot, crash, or accidental reset:**
-1. Stop the Streamlit app completely.
-2. Open File Explorer and go to the `data/backups/` folder (next to this validation_error_log.xlsx).
-3. Find the most recent file (e.g. validation_error_log_2026-06-13_....xlsx).
-4. Copy that file.
-5. Paste it into the `data/` folder and **overwrite** the main `validation_error_log.xlsx`.
-6. Restart the app. Everything (history + current state + per-PG cards) will be back exactly as it was at the time of that backup.
+If the dashboard is ever empty after reboot/crash: stop app, copy the latest file from data/backups/ over data/validation_error_log.xlsx, restart. (Same for snapshots/ files.)
 
-(You can also use a daily snapshot from `data/snapshots/` the same way.)
-
-• Every new report auto-creates a full backup in `data/backups/` (keeps last 30).
-• Daily snapshots (full log + current state + your nice formatted report) are saved to `data/snapshots/`.
-
-The latest backup (only) is shown below this message in the Danger Zone for easy access if needed.
-
-This permanently removes **all** HSG17 entries from the log. Only use when doing testing.""")
+This reset button below permanently removes **all** HSG17 entries. Only for testing.""")
 
 # Safer reset at the bottom
 confirm = st.checkbox("I confirm I want to permanently remove all HSG17 entries from the log.", key="confirm_reset")
@@ -1068,24 +1063,25 @@ if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", disa
     except Exception as e:
         st.error(f"Failed to clear data: {e}")
 
-    # Worst case: only the latest background backup shown here (saves happen silently in background on every report)
-    try:
-        backup_dir = Path(__file__).parent.parent / "data" / "backups"
-        if backup_dir.exists():
-            backups = sorted(backup_dir.glob("validation_error_log_*.xlsx"), reverse=True)
-            if backups:
-                latest = backups[0]
-                st.markdown(f"**Latest background backup:** `{latest.name}`")
-                with open(latest, "rb") as f:
-                    st.download_button(
-                        "📥 Download latest backup",
-                        data=f,
-                        file_name=latest.name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        width="stretch",
-                        help="Full copy of the log created automatically in the background (on every new report or manual backup)"
-                    )
-            else:
-                st.caption("No backups yet – they are created automatically in the background whenever you process a report.")
-    except Exception:
-        pass
+# Always show latest backup download in Danger Zone (moved out of reset if-block so it's visible without clicking reset).
+# Worst case: download this, copy over main log, restart.
+try:
+    backup_dir = Path(__file__).parent.parent / "data" / "backups"
+    if backup_dir.exists():
+        backups = sorted(backup_dir.glob("validation_error_log_*.xlsx"), reverse=True)
+        if backups:
+            latest = backups[0]
+            st.markdown(f"**Latest background backup:** `{latest.name}`")
+            with open(latest, "rb") as f:
+                st.download_button(
+                    "📥 Download latest backup",
+                    data=f,
+                    file_name=latest.name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    width="stretch",
+                    help="Full copy of the log created automatically in the background (or via manual fresh backup button). Use this to restore if needed."
+                )
+        else:
+            st.caption("No backups yet – click the \"Download Fresh Backup\" button above (or process a report) to create one.")
+except Exception:
+    pass

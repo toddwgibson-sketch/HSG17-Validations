@@ -891,10 +891,10 @@ if not current.empty:
                     pill_color = bldg_pill_color.get(bldg, "#67e8f9")
                     st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: 2px solid #67e8f9; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
 
-                    st.markdown(f'<span class="pg-pill" style="border-color:{pill_color}; background-color:#0f172a; font-size:1.25rem; font-weight:600; padding:6px 14px;">{pill_text}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="pg-pill" style="background-color:{pill_color}; color:#0f172a; font-size:1.25rem; font-weight:600; padding:6px 14px;">{pill_text}</span>', unsafe_allow_html=True)
 
                     if bldg:
-                        st.markdown(f'<div style="font-size:0.7rem; opacity:0.75; margin-bottom:2px; color:{pill_color};">{bldg}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="font-size:0.7rem; opacity:0.75; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)
 
                     st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 

@@ -812,6 +812,17 @@ if not current.empty:
 
         category_order = [c for c in CAT_LABELS.keys() if c in gpu_deltas['error_category'].unique()]
 
+        # Assign a consistent colour per PG (building) for the card border and the top/bottom fill strips.
+        unique_buildings = sorted(gpu_deltas['building'].dropna().unique())
+        PG_PILL_COLORS = [
+            "#f472b6", "#a78bfa", "#facc15", "#fb923c",
+            "#4ade80", "#38bdf8", "#c084fc", "#f87171",
+            "#60a5fa", "#34d399", "#fbbf24", "#f472b6"
+        ]
+        bldg_pill_color = {}
+        for idx, b in enumerate(unique_buildings):
+            bldg_pill_color[b] = PG_PILL_COLORS[idx % len(PG_PILL_COLORS)]
+
         for start_idx in range(0, len(gpu_racks), CARDS_PER_ROW):
             row_racks = gpu_racks[start_idx : start_idx + CARDS_PER_ROW]
             cols = st.columns(CARDS_PER_ROW)
@@ -874,16 +885,21 @@ if not current.empty:
                 list_html += "</div>"
 
                 with cols[i]:
-                    # Differentiated look: cyan border, type-aware header, different gradient feel
                     pill_text = f"🖥️ {rack_type} {rack}" if rack_type != "GPU" else f"🖥️ {rack}"
-                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: 2px solid #67e8f9; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
+                    pill_color = bldg_pill_color.get(bldg, "#67e8f9")
+                    # Outer bordered card (per-PG border). Top dark pill with rack name inside it. Main content below.
+                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: #0f172a; color: white; border: 2px solid {pill_color}; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3); border-radius: 12px; overflow: hidden;">', unsafe_allow_html=True)
 
-                    st.markdown(f'<div style="font-size:1.25rem; font-weight:600; padding:6px 14px; margin-bottom:4px;">{pill_text}</div>', unsafe_allow_html=True)
+                    # Top dark rounded pill containing the rack name (icon + number), inside the bordered card.
+                    st.markdown(f'<div style="background: #1e2937; border-radius: 9999px; padding: 8px 16px; margin: 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"> <span style="font-size:1.6rem;">🖥️</span> <span style="font-size:1.8rem; font-weight:700; color: white;">{pill_text}</span> </div>', unsafe_allow_html=True)
+
+                    # Main content area
+                    st.markdown('<div style="padding: 0 12px 8px;">', unsafe_allow_html=True)
 
                     if bldg:
-                        st.markdown(f'<div style="font-size:0.7rem; opacity:0.75; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="font-size:0.7rem; opacity:0.6; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)
 
-                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:8px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
                     if bar_data:
                         total_for_bar = sum(d['Count'] for d in bar_data)
@@ -894,11 +910,15 @@ if not current.empty:
                         bar_html += '</div>'
                         st.markdown(bar_html, unsafe_allow_html=True)
 
-                    st.markdown('<div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; margin-top: 4px;">', unsafe_allow_html=True)
+                    st.markdown('<div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; margin-top: 4px; font-size:0.7rem;">', unsafe_allow_html=True)
                     st.markdown(list_html, unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    # Bottom fill strip (per-PG color, matching the border)
+                    st.markdown(f'<div style="height: 18px; background: linear-gradient(90deg, {pill_color}, #0f172a); border-radius: 0 0 8px 8px; margin: 8px -12px -8px;"></div>', unsafe_allow_html=True)
+
+                    st.markdown('</div>', unsafe_allow_html=True)  # close main padding
+                    st.markdown('</div>', unsafe_allow_html=True)  # close outer card
 else:
     st.info("No GPU rack data after filters.")
 

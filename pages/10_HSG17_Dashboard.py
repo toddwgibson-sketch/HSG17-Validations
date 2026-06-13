@@ -887,11 +887,11 @@ if not current.empty:
                 with cols[i]:
                     pill_text = f"🖥️ {rack_type} {rack}" if rack_type != "GPU" else f"🖥️ {rack}"
                     pill_color = bldg_pill_color.get(bldg, "#67e8f9")
-                    # Outer bordered card (per-PG border). Top dark pill with rack name inside it. Main content below.
-                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: #0f172a; color: white; border: 2px solid {pill_color}; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3); border-radius: 12px; overflow: hidden;">', unsafe_allow_html=True)
+                    # Outer card with per-PG border. The dark top pill (with rack name INSIDE it) is the first content inside this bordered card. No top empty colored bar. Only one emoji.
+                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: #0f172a; color: white; border: 2px solid {pill_color}; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3); border-radius: 12px; overflow: hidden; border-top: 0;">', unsafe_allow_html=True)
 
-                    # Top dark rounded pill containing the rack name (icon + number), inside the bordered card.
-                    st.markdown(f'<div style="background: #1e2937; border-radius: 9999px; padding: 8px 16px; margin: 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"> <span style="font-size:1.6rem;">🖥️</span> <span style="font-size:1.8rem; font-weight:700; color: white;">{pill_text}</span> </div>', unsafe_allow_html=True)
+                    # Top dark rounded pill with the rack name INSIDE it (single 🖥️ from pill_text), inside the bordered card.
+                    st.markdown(f'<div style="background: #1e2937; border-radius: 9999px; padding: 8px 16px; margin: 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"> <span style="font-size:1.8rem; font-weight:700; color: white;">{pill_text}</span> </div>', unsafe_allow_html=True)
 
                     # Main content area
                     st.markdown('<div style="padding: 0 12px 8px;">', unsafe_allow_html=True)

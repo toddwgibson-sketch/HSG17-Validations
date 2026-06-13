@@ -22,6 +22,7 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter
 
 from utils.hsg17_models import is_gpu_rack, get_rack_type, extract_filtered_counts_from_summary
+from utils.data_logger import backup_log, save_daily_snapshot
 
 st.set_page_config(
     page_title="HSG17 Dashboard",
@@ -199,82 +200,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-DATA_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
 
-@st.cache_data(ttl=30)
-def load_data():
-    if not DATA_FILE.exists():
-        return pd.DataFrame(columns=[
-            "timestamp", "hall", "rack_type", "building", "rack",
-            "error_category", "count", "source_file", "processed_by"
-        ])
-    df = pd.read_excel(DATA_FILE)
-    # Upgrade schema if 'rack' column missing (for old logs without rack)
-    if 'rack' not in df.columns:
-        cols = list(df.columns)
-        idx = cols.index('building') + 1 if 'building' in cols else len(cols)
-        df.insert(idx, 'rack', '')
-        df['rack'] = df['rack'].astype('object').fillna('').astype(str)
-        try:
-            df.to_excel(DATA_FILE, index=False)
-            print(f"[DASHBOARD] Upgraded log schema with 'rack' column")
-        except Exception as e:
-            print(f"[DASHBOARD] Could not save upgraded log: {e}")
-    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-    if not df.empty:
-        # Treat stored timestamps as UTC (we log in UTC now) and convert to local tz of this computer for display.
-        # This makes "Last Updated" etc. match your local time. Historical data may shift if previously logged in another tz.
-        local_tz = datetime.now().astimezone().tzinfo
-        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert(local_tz)
-    return df.dropna(subset=['timestamp'])
-
-df = load_data()
-
-hsg17_df = df[df['hall'] == "HSG17"].copy()
-
-if hsg17_df.empty:
-    st.warning("No HSG17 data logged yet.")
-    st.info("Run one of the HSG17 tools (01 T1-to-T0 LVV, 02 Slack, or 03 T0-to-Host LVV) to log issues. The dashboard shows current state + deltas per Placement Group.")
-    st.stop()
-
-# --- Sidebar Filters (more interactive development for the dashboard) ---
-with st.sidebar:
-    st.header("🔍 Filters")
-    all_buildings = sorted(hsg17_df['building'].unique())
-    selected_buildings = st.multiselect(
-        "Placement Groups (Buildings)", 
-        all_buildings, 
-        default=all_buildings,
-        help="Filter the view to specific Placement Groups (e.g. PG14 for rack 3110)"
-    )
-    all_cats = sorted(hsg17_df['error_category'].unique())
-    selected_cats = st.multiselect(
-        "Error Categories", 
-        all_cats, 
-        default=all_cats
-    )
-
-    min_date = hsg17_df['timestamp'].min().date()
-    max_date = hsg17_df['timestamp'].max().date()
-    date_range = st.date_input(
-        "Consider logs from / to",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
-        help="Only include log entries within this date range when computing current state and deltas."
-    )
-
-# Apply filters to the raw log data before computing snapshots/deltas
-filtered_df = hsg17_df[
-    hsg17_df['building'].isin(selected_buildings) &
-    hsg17_df['error_category'].isin(selected_cats) &
-    (hsg17_df['timestamp'].dt.date >= date_range[0]) &
-    (hsg17_df['timestamp'].dt.date <= date_range[1])
-].copy()
-
-if filtered_df.empty:
-    st.warning("No data matches the current filters. Adjust the Placement Groups, Categories or Date Range in the sidebar.")
-    st.stop()
+# ====================== HELPER FUNCTIONS (moved up so we can use them for daily snapshots) ======================
 
 def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Most recent entry per (hall, building, rack, error_category).
@@ -295,6 +222,7 @@ def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
         .groupby(group_keys, as_index=False)
         .last()
     )
+
 
 def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Current vs previous run + delta for each (placement group + rack + category).
@@ -543,13 +471,110 @@ def generate_hsg17_summary_report(current_with_deltas: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+DATA_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
+
+@st.cache_data(ttl=30)
+def load_data():
+    if not DATA_FILE.exists():
+        return pd.DataFrame(columns=[
+            "timestamp", "hall", "rack_type", "building", "rack",
+            "error_category", "count", "source_file", "processed_by"
+        ])
+    df = pd.read_excel(DATA_FILE)
+    # Upgrade schema if 'rack' column missing (for old logs without rack)
+    if 'rack' not in df.columns:
+        cols = list(df.columns)
+        idx = cols.index('building') + 1 if 'building' in cols else len(cols)
+        df.insert(idx, 'rack', '')
+        df['rack'] = df['rack'].astype('object').fillna('').astype(str)
+        try:
+            df.to_excel(DATA_FILE, index=False)
+            print(f"[DASHBOARD] Upgraded log schema with 'rack' column")
+        except Exception as e:
+            print(f"[DASHBOARD] Could not save upgraded log: {e}")
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    if not df.empty:
+        # Treat stored timestamps as UTC (we log in UTC now) and convert to local tz of this computer for display.
+        # This makes "Last Updated" etc. match your local time. Historical data may shift if previously logged in another tz.
+        local_tz = datetime.now().astimezone().tzinfo
+        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert(local_tz)
+    return df.dropna(subset=['timestamp'])
+
+df = load_data()
+
+hsg17_df = df[df['hall'] == "HSG17"].copy()
+
+# Daily snapshot of the *full* current state (ignoring current sidebar filters)
+# This gives a restore point for the "as of end of day" view the cards are showing.
+# Runs once per calendar day on first load after midnight.
+try:
+    if not hsg17_df.empty:
+        full_latest = get_latest_snapshot(hsg17_df)
+        save_daily_snapshot(hsg17_df, full_latest)
+
+        # Also save the nice formatted stakeholder report for today (if not already)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        snap_dir = Path(__file__).parent.parent / "data" / "snapshots"
+        formatted = snap_dir / f"HSG17_Summary_Report_{today_str}.xlsx"
+        if not formatted.exists():
+            full_deltas = get_latest_with_deltas(hsg17_df)
+            report_bytes = generate_hsg17_summary_report(full_deltas)
+            formatted.write_bytes(report_bytes)
+            print(f"[SNAPSHOT] Saved daily formatted report: {formatted.name}")
+except Exception as snap_err:
+    print(f"[SNAPSHOT] Daily snapshot skipped/failed: {snap_err}")
+
+if hsg17_df.empty:
+    st.warning("No HSG17 data logged yet.")
+    st.info("Run one of the HSG17 tools (01 T1-to-T0 LVV, 02 Slack, or 03 T0-to-Host LVV) to log issues. The dashboard shows current state + deltas per Placement Group.")
+    st.stop()
+
+# --- Sidebar Filters (more interactive development for the dashboard) ---
+with st.sidebar:
+    st.header("🔍 Filters")
+    all_buildings = sorted(hsg17_df['building'].unique())
+    selected_buildings = st.multiselect(
+        "Placement Groups (Buildings)", 
+        all_buildings, 
+        default=all_buildings,
+        help="Filter the view to specific Placement Groups (e.g. PG14 for rack 3110)"
+    )
+    all_cats = sorted(hsg17_df['error_category'].unique())
+    selected_cats = st.multiselect(
+        "Error Categories", 
+        all_cats, 
+        default=all_cats
+    )
+
+    min_date = hsg17_df['timestamp'].min().date()
+    max_date = hsg17_df['timestamp'].max().date()
+    date_range = st.date_input(
+        "Consider logs from / to",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+        help="Only include log entries within this date range when computing current state and deltas."
+    )
+
+# Apply filters to the raw log data before computing snapshots/deltas
+filtered_df = hsg17_df[
+    hsg17_df['building'].isin(selected_buildings) &
+    hsg17_df['error_category'].isin(selected_cats) &
+    (hsg17_df['timestamp'].dt.date >= date_range[0]) &
+    (hsg17_df['timestamp'].dt.date <= date_range[1])
+].copy()
+
+if filtered_df.empty:
+    st.warning("No data matches the current filters. Adjust the Placement Groups, Categories or Date Range in the sidebar.")
+    st.stop()
+
 current = get_latest_snapshot(filtered_df)
 current_with_deltas = get_latest_with_deltas(filtered_df)
 
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
-    st.caption(f"Logged data is persisted on disk in `data/validation_error_log.xlsx`. Restarting the Streamlit app will **not** delete it. Current HSG17 entries in log: **{len(hsg17_df)}**")
+    st.caption(f"Logged data is persisted on disk in `data/validation_error_log.xlsx`. Restarting the Streamlit app will **not** delete it. Current HSG17 entries in log: **{len(hsg17_df)}**.\n\n• Every new report automatically creates a full backup in `data/backups/` (keeps last 30).\n• Daily snapshots (full log + current state + your formatted report) go to `data/snapshots/` (triggered on first dashboard load of a new day).")
     col1, col2, col3 = st.columns(3)
     with col1:
         with open(DATA_FILE, "rb") as f:
@@ -582,6 +607,7 @@ if DATA_FILE.exists():
                      help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
             try:
                 if DATA_FILE.exists():
+                    backup_log()  # safety backup before any destructive action
                     df = pd.read_excel(DATA_FILE)
                     if 'hall' in df.columns:
                         df_clean = df[df['hall'] != "HSG17"].copy()
@@ -600,6 +626,26 @@ if DATA_FILE.exists():
                     st.info("No data file found to clear.")
             except Exception as e:
                 st.error(f"Failed to clear data: {e}")
+
+    # Show recent local backups for peace of mind (these are never pushed to GitHub)
+    try:
+        backup_dir = Path(__file__).parent.parent / "data" / "backups"
+        if backup_dir.exists():
+            recent_backups = sorted(backup_dir.glob("validation_error_log_*.xlsx"), reverse=True)[:5]
+            if recent_backups:
+                st.markdown("<div style='font-size:0.8rem; margin-top:8px; color:#94a3b8;'>Recent automatic full-log backups (local only, never in GitHub):</div>", unsafe_allow_html=True)
+                for b in recent_backups:
+                    with open(b, "rb") as f:
+                        st.download_button(
+                            f"📥 {b.name}",
+                            data=f,
+                            file_name=b.name,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"backup_{b.name}",
+                            help="Full backup created automatically before each new log entry"
+                        )
+    except Exception:
+        pass
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()

@@ -50,9 +50,11 @@ def ensure_log_exists():
 def backup_log():
     """Create a timestamped full backup of the log before any write.
     Prunes old backups to keep disk usage reasonable.
+    Returns the backup_path on success, None on failure (e.g. if log doesn't exist yet).
     """
     if not LOG_FILE.exists():
-        return
+        return None
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
     backup_path = BACKUP_DIR / f"validation_error_log_{ts}.xlsx"
     try:
@@ -66,8 +68,10 @@ def backup_log():
             except Exception:
                 pass
         print(f"[DATA_LOGGER] Backed up current log to {backup_path}")
+        return backup_path
     except Exception as e:
         print(f"[DATA_LOGGER] Backup failed: {e}")
+        return None
 
 
 def save_daily_snapshot(full_hsg17_df: pd.DataFrame, latest_df: pd.DataFrame = None):

@@ -574,7 +574,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
-    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). See the Danger Zone at the very bottom for full details + exact restore steps if the log ever looks empty.")
+    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). See the Danger Zone at the very bottom for full details + exact restore steps if the log ever looks empty. Backups happen silently in the background (no list here).")
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:
@@ -608,21 +608,25 @@ if DATA_FILE.exists():
     if st.button("💾 Create Manual Full Backup + Snapshot RIGHT NOW", key="manual_backup_btn",
                  help="Immediately creates a timestamped full copy of the entire log in data/backups/ AND a daily snapshot in data/snapshots/. Do this after important uploads or before rebooting if you're nervous."):
         try:
-            backup_log()
-            full_hsg17 = df[df['hall'] == "HSG17"].copy()
-            if not full_hsg17.empty:
-                full_latest = get_latest_snapshot(full_hsg17)
-                save_daily_snapshot(full_hsg17, full_latest)
-                # also the nice formatted report for today
-                today_str = datetime.now().strftime("%Y-%m-%d")
-                snap_dir = Path(__file__).parent.parent / "data" / "snapshots"
-                formatted = snap_dir / f"HSG17_Summary_Report_{today_str}.xlsx"
-                if not formatted.exists():
-                    full_deltas = get_latest_with_deltas(full_hsg17)
-                    report_bytes = generate_hsg17_summary_report(full_deltas)
-                    formatted.write_bytes(report_bytes)
-            st.session_state.manual_backup_msg = "Manual backup + snapshot created successfully in the background!"
-            st.rerun()
+            bpath = backup_log()
+            if bpath:
+                full_hsg17 = df[df['hall'] == "HSG17"].copy()
+                if not full_hsg17.empty:
+                    full_latest = get_latest_snapshot(full_hsg17)
+                    save_daily_snapshot(full_hsg17, full_latest)
+                    # also the nice formatted report for today
+                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    snap_dir = Path(__file__).parent.parent / "data" / "snapshots"
+                    formatted = snap_dir / f"HSG17_Summary_Report_{today_str}.xlsx"
+                    if not formatted.exists():
+                        full_deltas = get_latest_with_deltas(full_hsg17)
+                        report_bytes = generate_hsg17_summary_report(full_deltas)
+                        formatted.write_bytes(report_bytes)
+                st.session_state.manual_backup_msg = f"Manual backup + snapshot created! Backup: {bpath.name}"
+                st.rerun()
+            else:
+                st.session_state.manual_backup_msg = "Manual backup failed: no log file to backup yet."
+                st.rerun()
         except Exception as e:
             st.session_state.manual_backup_msg = f"Manual backup failed: {e}"
             st.rerun()
@@ -634,6 +638,10 @@ if DATA_FILE.exists():
             st.success(st.session_state.manual_backup_msg)
         # clear after showing
         st.session_state.manual_backup_msg = None
+
+    # Note: the full list of backups was removed from here per your request (ugly on page).
+    # Backups happen silently in background on every report.
+    # Only the latest is shown in the Danger Zone at bottom (for worst case).
 
     st.markdown('</div>', unsafe_allow_html=True)
 

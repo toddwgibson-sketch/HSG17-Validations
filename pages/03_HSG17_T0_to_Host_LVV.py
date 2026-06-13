@@ -18,10 +18,9 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from openpyxl import load_workbook
 
 from utils.data_logger import log_errors
-from utils.hsg17_models import derive_placement_and_rack_from_files
+from utils.hsg17_models import derive_placement_and_rack_from_files, extract_filtered_counts_from_summary
 from utils.t0_to_host_formatter import format_report
 
 
@@ -128,39 +127,18 @@ if run_btn and validation_files and cutsheet_files:
                 source_name = ", ".join([f.name for f in validation_files])
 
                 for out_p in output_paths:
-                    # Count rows in the main output sheets for dashboard categories
                     try:
-                        wb = load_workbook(out_p)
-                        cat_counts = {}
-
                         # Read the *filtered* counts directly from the Summary tab of the produced report.
                         # This matches exactly what the user sees in the report's Summary
                         # (excludes greyed-out rows for -40 optics, CT-off, "also interface down", etc.)
-                        if "Summary" in wb.sheetnames:
-                            summary_ws = wb["Summary"]
-                            for row in summary_ws.iter_rows(min_row=1, values_only=True):
-                                if row and len(row) >= 2 and row[0] and row[1] is not None:
-                                    cat = str(row[0]).strip().lower()
-                                    try:
-                                        cnt = int(row[1]) if not isinstance(row[1], str) else 0
-                                    except:
-                                        cnt = 0
-
-                                    if "mismatch" in cat or "lldp" in cat:
-                                        cat_counts["LLDP Mismatch + Link Down"] = cnt
-                                    elif "optic" in cat:
-                                        cat_counts["Optic Errors"] = cnt
-                                    elif "fec" in cat or "ber" in cat:
-                                        cat_counts["FEC_BER Errors"] = cnt
-                                    elif "interface down" in cat:
-                                        cat_counts["Interface Down Errors"] = cnt
+                        counts = extract_filtered_counts_from_summary(str(out_p))
 
                         # Derive placement/rack from the *produced* file (has the actual error rows with populated RackA from cutsheet).
-                        # This ensures GPU racks (e.g. 2617) from T0-to-Host validation results are correctly captured
-                        # so the dashboard's "Errors by Category × GPU Rack" section picks them up.
+                        # This ensures GPU racks (e.g. 2507/2508) from T0-to-Host validation results are correctly captured
+                        # so the dashboard's "GPU Rack Breakdown" shows separate cards even for racks in the same PG.
                         placement, rack = derive_placement_and_rack_from_files([str(out_p)])
 
-                        for cat_name, cnt in cat_counts.items():
+                        for cat_name, cnt in counts.items():
                             if cnt > 0:
                                 success = log_errors(
                                     hall="HSG17",

@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
 
-from utils.hsg17_models import is_gpu_rack, get_rack_type
+from utils.hsg17_models import is_gpu_rack, get_rack_type, extract_filtered_counts_from_summary
 
 st.set_page_config(
     page_title="HSG17 Dashboard",
@@ -272,22 +272,42 @@ if filtered_df.empty:
     st.stop()
 
 def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Only the most recent entry per (building/placement group, error_category)."""
+    """Most recent entry per (hall, building, rack, error_category).
+
+    Rack is included in the key so that multiple racks reporting under the same
+    Placement Group (e.g. GPU racks 2507 and 2508 both in PG11) each keep their
+    own latest counts. The PG-level "Error Breakdown" cards sum across racks
+    belonging to the same building; the GPU Rack Breakdown section renders a
+    dedicated card per GPU rack.
+    """
     if dataframe.empty:
         return dataframe
+    group_keys = ['hall', 'building', 'error_category']
+    if 'rack' in dataframe.columns:
+        group_keys = ['hall', 'building', 'rack', 'error_category']
     return (
         dataframe.sort_values('timestamp')
-        .groupby(['hall', 'building', 'error_category'], as_index=False)
+        .groupby(group_keys, as_index=False)
         .last()
     )
 
 def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Current vs previous run + delta for each placement group+category."""
+    """Current vs previous run + delta for each (placement group + rack + category).
+
+    Including rack in the key ensures 2507 vs 2508 (same PG) keep separate histories.
+    Deltas are per-rack. PG cards later sum currents (and available deltas) across
+    the racks that belong to the same building.
+    """
     if dataframe.empty:
         return pd.DataFrame(columns=['hall', 'building', 'error_category', 'rack', 'current', 'previous', 'delta'])
 
+    group_cols = ['hall', 'building', 'error_category']
+    has_rack = 'rack' in dataframe.columns
+    if has_rack:
+        group_cols = ['hall', 'building', 'rack', 'error_category']
+
     records = []
-    for (hall, bldg, cat), group in dataframe.sort_values('timestamp').groupby(['hall', 'building', 'error_category']):
+    for keys, group in dataframe.sort_values('timestamp').groupby(group_cols):
         group = group.sort_values('timestamp')
         current = int(group.iloc[-1]['count'])
 
@@ -301,8 +321,14 @@ def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
         if pd.isna(delta):
             delta = None
 
-        rack_val = group.iloc[-1].get('rack', '') if 'rack' in group.columns else ''
-        rack = str(rack_val) if pd.notna(rack_val) and rack_val != '' else ''
+        if has_rack:
+            rack_val = keys[2]
+            hall, bldg, _r, cat = keys
+        else:
+            rack_val = group.iloc[-1].get('rack', '') if 'rack' in group.columns else ''
+            hall, bldg, cat = keys
+
+        rack = str(rack_val) if pd.notna(rack_val) and str(rack_val).strip() != '' else ''
 
         records.append({
             'hall': hall,
@@ -447,12 +473,20 @@ if not current.empty:
         for i, bldg in enumerate(row_buildings):
             bldg_deltas = current_with_deltas[current_with_deltas['building'] == bldg]
 
+            # Sum across racks within the same PG (building). This allows PG11 to
+            # correctly show combined numbers for 2507+2508 (and any future racks)
+            # while still preserving per-rack latests for the GPU cards section.
             cat_current = {}
             cat_delta = {}
             for _, row in bldg_deltas.iterrows():
                 cat = row['error_category']
-                cat_current[cat] = row['current']
-                cat_delta[cat] = row['delta']
+                cat_current[cat] = cat_current.get(cat, 0) + row['current']
+                d = row.get('delta')
+                if pd.notna(d):
+                    if cat in cat_delta and pd.notna(cat_delta.get(cat)):
+                        cat_delta[cat] = cat_delta[cat] + d
+                    else:
+                        cat_delta[cat] = d
 
             bldg_total = sum(cat_current.values())
 
@@ -552,6 +586,8 @@ if not current.empty:
 
                 rack_type = get_rack_type(rack)
 
+                # GPU cards: errors by rack only. No summing (even for racks in the same PG).
+                # rack_deltas is already filtered to this one rack, so direct assignment per category.
                 cat_current = {}
                 cat_delta = {}
                 for _, row in rack_deltas.iterrows():

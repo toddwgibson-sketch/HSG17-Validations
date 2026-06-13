@@ -574,7 +574,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
-    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). Use the \"Download Fresh Backup\" button above for a quick timestamped copy (like a report). See Danger Zone at bottom if you ever need to restore. Backups happen silently in the background (no lists on page).")
+    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). Backups happen silently in the background (no lists on page). See Danger Zone at bottom for the manual fresh backup button + restore if you ever need it.")
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:
@@ -600,56 +600,6 @@ if DATA_FILE.exists():
             )
         except Exception as e:
             st.warning(f"Could not generate summary report: {e}")
-
-    # Manual "download the backup like a report" - direct, no flash, just the data + side-effect save to backups/.
-    # Per request: one click gives you the bloody data file (timestamped backup copy) to download immediately.
-    if "pending_backup" not in st.session_state:
-        st.session_state.pending_backup = None
-
-    if st.button("📥 Download Fresh Backup (timestamped full log)", key="manual_backup_btn", width="stretch",
-                 help="Forces a fresh timestamped backup copy to data/backups/ right now and gives you a download button for the file (exactly like downloading a report). Use before reboots or after big uploads."):
-        try:
-            bpath = backup_log()
-            if bpath and bpath.exists():
-                with open(bpath, "rb") as f:
-                    data = f.read()
-                st.session_state.pending_backup = (bpath.name, data)
-                # Also snapshot for full safety (background, no UI spam)
-                try:
-                    full_hsg17 = df[df['hall'] == "HSG17"].copy()
-                    if not full_hsg17.empty:
-                        full_latest = get_latest_snapshot(full_hsg17)
-                        save_daily_snapshot(full_hsg17, full_latest)
-                except Exception:
-                    pass
-            else:
-                st.session_state.pending_backup = ("failed", None)
-        except Exception as e:
-            st.session_state.pending_backup = (f"error:{e}", None)
-
-    pb = st.session_state.get("pending_backup")
-    if pb:
-        name, data = pb
-        if name == "failed":
-            st.error("No log file to backup yet (process a report first).")
-        elif name.startswith("error"):
-            st.error(f"Backup failed: {name}")
-        elif data:
-            st.success(f"Backup ready — {name}")
-            st.download_button(
-                f"⬇️ Download {name}",
-                data=data,
-                file_name=name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
-                help="This is your fresh full backup copy. Save it like any report. Also saved in data/backups/."
-            )
-        if st.button("✖ dismiss", key="clear_pending_backup"):
-            st.session_state.pending_backup = None
-            st.rerun()
-
-    # Note: no ugly lists of backups on the page (removed). Backups silent in bg + this manual.
-    # Only latest shown down in Danger Zone.
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1031,11 +981,13 @@ else:
 # Only relevant for testing.
 st.divider()
 st.markdown("### ⚠️ Danger Zone — Reset Data (testing only)")
-st.caption("""Backups (full timestamped copies) are created silently in the background on every report and via the "Download Fresh Backup" button in Data Management above. Only the single latest is shown here for download.
+st.caption("""Backups (full timestamped copies) are created silently in the background on every report. 
+
+Use the button below to force a fresh one right now and download the file immediately (your "just in case" before reboot). Only the single latest is shown for easy access.
 
 If the dashboard is ever empty after reboot/crash: stop app, copy the latest file from data/backups/ over data/validation_error_log.xlsx, restart. (Same for snapshots/ files.)
 
-This reset button below permanently removes **all** HSG17 entries. Only for testing.""")
+This reset button permanently removes **all** HSG17 entries. Only for testing.""")
 
 # Safer reset at the bottom
 confirm = st.checkbox("I confirm I want to permanently remove all HSG17 entries from the log.", key="confirm_reset")
@@ -1063,7 +1015,55 @@ if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", disa
     except Exception as e:
         st.error(f"Failed to clear data: {e}")
 
-# Always show latest backup download in Danger Zone (moved out of reset if-block so it's visible without clicking reset).
+# Manual fresh backup button moved here to the bottom (incase / reboot safety only).
+# Does the backup + snapshot side effects then immediately offers the download like a report.
+if "pending_backup" not in st.session_state:
+    st.session_state.pending_backup = None
+
+st.markdown("**📥 Fresh manual backup (for reboot peace of mind)**")
+if st.button("📥 Download Fresh Backup (timestamped full log)", key="manual_backup_btn", width="stretch",
+             help="Forces a fresh timestamped backup copy to data/backups/ right now + snapshots, then gives you a direct download button for the file. Use before reboots."):
+    try:
+        bpath = backup_log()
+        if bpath and bpath.exists():
+            with open(bpath, "rb") as f:
+                data = f.read()
+            st.session_state.pending_backup = (bpath.name, data)
+            # Also snapshot for full safety (background)
+            try:
+                full_hsg17 = df[df['hall'] == "HSG17"].copy()
+                if not full_hsg17.empty:
+                    full_latest = get_latest_snapshot(full_hsg17)
+                    save_daily_snapshot(full_hsg17, full_latest)
+            except Exception:
+                pass
+        else:
+            st.session_state.pending_backup = ("failed", None)
+    except Exception as e:
+        st.session_state.pending_backup = (f"error:{e}", None)
+
+pb = st.session_state.get("pending_backup")
+if pb:
+    name, data = pb
+    if name == "failed":
+        st.error("No log file to backup yet (process a report first).")
+    elif name.startswith("error"):
+        st.error(f"Backup failed: {name}")
+    elif data:
+        st.success(f"Backup ready — {name}")
+        st.download_button(
+            f"⬇️ Download {name}",
+            data=data,
+            file_name=name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch",
+            help="This is your fresh full backup copy. Save it like any report. Also saved in data/backups/."
+        )
+    if st.button("✖ dismiss", key="clear_pending_backup"):
+        st.session_state.pending_backup = None
+        st.rerun()
+
+# Always show latest backup download in Danger Zone.
 # Worst case: download this, copy over main log, restart.
 try:
     backup_dir = Path(__file__).parent.parent / "data" / "backups"
@@ -1079,9 +1079,9 @@ try:
                     file_name=latest.name,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     width="stretch",
-                    help="Full copy of the log created automatically in the background (or via manual fresh backup button). Use this to restore if needed."
+                    help="Full copy of the log created automatically in the background (or via the manual button above). Use this to restore if needed."
                 )
         else:
-            st.caption("No backups yet – click the \"Download Fresh Backup\" button above (or process a report) to create one.")
+            st.caption("No backups yet – use the manual backup button above or process a report to create one.")
 except Exception:
     pass

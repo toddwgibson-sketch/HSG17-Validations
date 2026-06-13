@@ -793,12 +793,14 @@ if not current.empty:
 
         category_order = [c for c in CAT_LABELS.keys() if c in gpu_deltas['error_category'].unique()]
 
-        # Assign a consistent colour per PG (building) for the card border and the top/bottom fill strips.
+        # Assign a consistent colour per PG (building) for the card border and the bottom fill strip.
+        # Refreshed palette: vibrant jewel tones (pinks, purples, blues, teals, greens) that work well
+        # on dark slate backgrounds. No muddy yellows or clashing salmon tones.
         unique_buildings = sorted(gpu_deltas['building'].dropna().unique())
         PG_PILL_COLORS = [
-            "#f472b6", "#a78bfa", "#facc15", "#fb923c",
-            "#4ade80", "#38bdf8", "#c084fc", "#f87171",
-            "#60a5fa", "#34d399", "#fbbf24", "#f472b6"
+            "#f472b6", "#c084fc", "#60a5fa", "#67e8f9",
+            "#5eead4", "#4ade80", "#a78bfa", "#fb7185",
+            "#38bdf8", "#34d399", "#818cf8", "#22d3ee"
         ]
         bldg_pill_color = {}
         for idx, b in enumerate(unique_buildings):

@@ -547,6 +547,8 @@ if not current.empty:
                 rack_deltas = gpu_deltas[gpu_deltas['rack'] == rack]
                 bldg = rack_deltas['building'].iloc[0] if len(rack_deltas) > 0 else ""
 
+                rack_type = get_rack_type(rack)
+
                 cat_current = {}
                 cat_delta = {}
                 for _, row in rack_deltas.iterrows():
@@ -597,10 +599,11 @@ if not current.empty:
                 list_html += "</div>"
 
                 with cols[i]:
-                    # Differentiated look: cyan border, GPU icon, different gradient feel
+                    # Differentiated look: cyan border, type-aware pill, different gradient feel
+                    pill_text = f"🖥️ {rack_type} {rack}" if rack_type != "GPU" else f"🖥️ {rack}"
                     st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: 2px solid #67e8f9; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
 
-                    st.markdown(f'<span class="pg-pill" style="border-color:#67e8f9; background-color:#0f172a;">🖥️ GPU {rack}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="pg-pill" style="border-color:#67e8f9; background-color:#0f172a;">{pill_text}</span>', unsafe_allow_html=True)
 
                     if bldg:
                         st.markdown(f'<div style="font-size:0.7rem; opacity:0.75; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)

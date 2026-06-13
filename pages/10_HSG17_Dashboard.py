@@ -574,7 +574,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
-    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. See Danger Zone below for persistence & backup details.")
+    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). See the Danger Zone at the very bottom for full details + exact restore steps if the log ever looks empty.")
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:
@@ -600,6 +600,28 @@ if DATA_FILE.exists():
             )
         except Exception as e:
             st.warning(f"Could not generate summary report: {e}")
+
+    # Manual backup button - for peace of mind when you're worried about data loss
+    if st.button("💾 Create Manual Full Backup + Snapshot RIGHT NOW", key="manual_backup_btn",
+                 help="Immediately creates a timestamped full copy of the entire log in data/backups/ AND a daily snapshot in data/snapshots/. Do this after important uploads or before rebooting if you're nervous."):
+        try:
+            backup_log()
+            full_hsg17 = df[df['hall'] == "HSG17"].copy()
+            if not full_hsg17.empty:
+                full_latest = get_latest_snapshot(full_hsg17)
+                save_daily_snapshot(full_hsg17, full_latest)
+                # also the nice formatted report for today
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                snap_dir = Path(__file__).parent.parent / "data" / "snapshots"
+                formatted = snap_dir / f"HSG17_Summary_Report_{today_str}.xlsx"
+                if not formatted.exists():
+                    full_deltas = get_latest_with_deltas(full_hsg17)
+                    report_bytes = generate_hsg17_summary_report(full_deltas)
+                    formatted.write_bytes(report_bytes)
+            st.success("Manual backup + snapshot created! Check the 'Recent automatic full-log backups' list below (refresh if needed) and data/snapshots/ folder.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Manual backup failed: {e}")
 
     # Show recent local backups for peace of mind (these are never pushed to GitHub)
     try:
@@ -1000,10 +1022,22 @@ else:
 # Only relevant for testing.
 st.divider()
 st.markdown("### ⚠️ Danger Zone — Reset Data")
-st.caption(f"""Logged data is persisted on disk in `data/validation_error_log.xlsx`. Restarting the Streamlit app will **not** delete it. Current HSG17 entries in log: **{len(hsg17_df)}**.
+st.caption(f"""Logged data is persisted on disk in `data/validation_error_log.xlsx`. **Rebooting the app will NOT empty it** — the file lives on your disk.
 
-• Every new report automatically creates a full backup in `data/backups/` (keeps last 30).
-• Daily snapshots (full log + current state + your formatted report) go to `data/snapshots/` (triggered on first dashboard load of a new day).
+**If the dashboard ever shows no/empty data after reboot, crash, or accidental reset:**
+1. Stop the Streamlit app completely.
+2. Open File Explorer and go to the `data/backups/` folder (next to this validation_error_log.xlsx).
+3. Find the most recent file (e.g. validation_error_log_2026-06-13_....xlsx).
+4. Copy that file.
+5. Paste it into the `data/` folder and **overwrite** the main `validation_error_log.xlsx`.
+6. Restart the app. Everything (history + current state + per-PG cards) will be back exactly as it was at the time of that backup.
+
+(You can also use a daily snapshot from `data/snapshots/` the same way.)
+
+• Every new report auto-creates a full backup in `data/backups/` (keeps last 30).
+• Daily snapshots (full log + current state + your nice formatted report) are saved to `data/snapshots/`.
+
+The recent backups are listed with download buttons right above this message.
 
 This permanently removes **all** HSG17 entries from the log. Only use when doing testing.""")
 

@@ -602,6 +602,9 @@ if DATA_FILE.exists():
             st.warning(f"Could not generate summary report: {e}")
 
     # Manual backup button - for peace of mind when you're worried about data loss
+    if "manual_backup_msg" not in st.session_state:
+        st.session_state.manual_backup_msg = None
+
     if st.button("💾 Create Manual Full Backup + Snapshot RIGHT NOW", key="manual_backup_btn",
                  help="Immediately creates a timestamped full copy of the entire log in data/backups/ AND a daily snapshot in data/snapshots/. Do this after important uploads or before rebooting if you're nervous."):
         try:
@@ -618,30 +621,20 @@ if DATA_FILE.exists():
                     full_deltas = get_latest_with_deltas(full_hsg17)
                     report_bytes = generate_hsg17_summary_report(full_deltas)
                     formatted.write_bytes(report_bytes)
-            st.success("Manual backup + snapshot created! Check the 'Recent automatic full-log backups' list below (refresh if needed) and data/snapshots/ folder.")
+            st.session_state.manual_backup_msg = "Manual backup + snapshot created successfully in the background!"
             st.rerun()
         except Exception as e:
-            st.error(f"Manual backup failed: {e}")
+            st.session_state.manual_backup_msg = f"Manual backup failed: {e}"
+            st.rerun()
 
-    # Show recent local backups for peace of mind (these are never pushed to GitHub)
-    try:
-        backup_dir = Path(__file__).parent.parent / "data" / "backups"
-        if backup_dir.exists():
-            recent_backups = sorted(backup_dir.glob("validation_error_log_*.xlsx"), reverse=True)[:5]
-            if recent_backups:
-                st.markdown("<div style='font-size:0.8rem; margin-top:8px; color:#94a3b8;'>Recent automatic full-log backups (local only, never in GitHub):</div>", unsafe_allow_html=True)
-                for b in recent_backups:
-                    with open(b, "rb") as f:
-                        st.download_button(
-                            f"📥 {b.name}",
-                            data=f,
-                            file_name=b.name,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key=f"backup_{b.name}",
-                            help="Full backup created automatically before each new log entry"
-                        )
-    except Exception:
-        pass
+    if st.session_state.manual_backup_msg:
+        if "failed" in st.session_state.manual_backup_msg.lower():
+            st.error(st.session_state.manual_backup_msg)
+        else:
+            st.success(st.session_state.manual_backup_msg)
+        # clear after showing
+        st.session_state.manual_backup_msg = None
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
@@ -1037,7 +1030,7 @@ st.caption(f"""Logged data is persisted on disk in `data/validation_error_log.xl
 • Every new report auto-creates a full backup in `data/backups/` (keeps last 30).
 • Daily snapshots (full log + current state + your nice formatted report) are saved to `data/snapshots/`.
 
-The recent backups are listed with download buttons right above this message.
+The latest backup (only) is shown below this message in the Danger Zone for easy access if needed.
 
 This permanently removes **all** HSG17 entries from the log. Only use when doing testing.""")
 
@@ -1066,3 +1059,25 @@ if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", disa
             st.info("No data file found to clear.")
     except Exception as e:
         st.error(f"Failed to clear data: {e}")
+
+    # Worst case: only the latest background backup shown here (saves happen silently in background on every report)
+    try:
+        backup_dir = Path(__file__).parent.parent / "data" / "backups"
+        if backup_dir.exists():
+            backups = sorted(backup_dir.glob("validation_error_log_*.xlsx"), reverse=True)
+            if backups:
+                latest = backups[0]
+                st.markdown(f"**Latest background backup:** `{latest.name}`")
+                with open(latest, "rb") as f:
+                    st.download_button(
+                        "📥 Download latest backup",
+                        data=f,
+                        file_name=latest.name,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        width="stretch",
+                        help="Full copy of the log created automatically in the background (on every new report or manual backup)"
+                    )
+            else:
+                st.caption("No backups yet – they are created automatically in the background whenever you process a report.")
+    except Exception:
+        pass

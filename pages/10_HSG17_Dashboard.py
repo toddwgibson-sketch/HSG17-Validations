@@ -812,6 +812,18 @@ if not current.empty:
 
         category_order = [c for c in CAT_LABELS.keys() if c in gpu_deltas['error_category'].unique()]
 
+        # Assign a consistent outline/pill colour per PG (building) so cards from the
+        # same placement group share the same border colour on the card and pill.
+        unique_buildings = sorted(gpu_deltas['building'].dropna().unique())
+        PG_PILL_COLORS = [
+            "#f472b6", "#a78bfa", "#facc15", "#fb923c",
+            "#4ade80", "#38bdf8", "#c084fc", "#f87171",
+            "#60a5fa", "#34d399", "#fbbf24", "#f472b6"
+        ]
+        bldg_pill_color = {}
+        for idx, b in enumerate(unique_buildings):
+            bldg_pill_color[b] = PG_PILL_COLORS[idx % len(PG_PILL_COLORS)]
+
         for start_idx in range(0, len(gpu_racks), CARDS_PER_ROW):
             row_racks = gpu_racks[start_idx : start_idx + CARDS_PER_ROW]
             cols = st.columns(CARDS_PER_ROW)
@@ -874,11 +886,13 @@ if not current.empty:
                 list_html += "</div>"
 
                 with cols[i]:
-                    # Differentiated look: cyan border, type-aware pill, different gradient feel
+                    # Differentiated look: PG-specific outline colour on the card + pill border,
+                    # different gradient feel per card. The small PG name below the pill stays neutral.
                     pill_text = f"🖥️ {rack_type} {rack}" if rack_type != "GPU" else f"🖥️ {rack}"
-                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: 2px solid #67e8f9; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
+                    pill_color = bldg_pill_color.get(bldg, "#67e8f9")
+                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: linear-gradient(135deg, {g1}, {g2}); color: white; border: 2px solid {pill_color}; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);">', unsafe_allow_html=True)
 
-                    st.markdown(f'<span class="pg-pill" style="border-color:#67e8f9; background-color:#0f172a; font-size:1.25rem; font-weight:600; padding:6px 14px;">{pill_text}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<span class="pg-pill" style="border-color:{pill_color}; background-color:#0f172a; font-size:1.25rem; font-weight:600; padding:6px 14px;">{pill_text}</span>', unsafe_allow_html=True)
 
                     if bldg:
                         st.markdown(f'<div style="font-size:0.7rem; opacity:0.75; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)

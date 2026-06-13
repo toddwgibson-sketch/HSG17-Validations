@@ -15,6 +15,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from io import BytesIO
 
 from openpyxl import Workbook
@@ -23,6 +24,8 @@ from openpyxl.utils import get_column_letter
 
 from utils.hsg17_models import is_gpu_rack, get_rack_type, extract_filtered_counts_from_summary
 from utils.data_logger import backup_log, save_daily_snapshot
+
+SYDNEY_TZ = ZoneInfo("Australia/Sydney")
 
 st.set_page_config(
     page_title="HSG17 Dashboard",
@@ -496,7 +499,7 @@ def load_data():
     if not df.empty:
         # Treat stored timestamps as UTC (we log in UTC now).
         # Keep as UTC internally for consistency (snapshots, calculations).
-        # We convert to local TZ only for UI display, filters, and "last updated" time.
+        # UI display, LAST UPDATED ("time snapshot"), date filters, etc. are converted to hardcoded Sydney time.
         if getattr(df['timestamp'].dt, 'tz', None) is None:
             df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
     return df.dropna(subset=['timestamp'])
@@ -506,16 +509,18 @@ df = load_data()
 # Keep UTC version for snapshots (consistent "right" timezone in snapshot files, independent of when/where dashboard is viewed)
 hsg17_df_utc = df[df['hall'] == "HSG17"].copy()
 
-# Convert to local TZ for all UI/display (dates in picker, trend times, last updated, etc.)
-# This gives you the "right time zone" for viewing on this machine.
-local_tz = datetime.now().astimezone().tzinfo
+# Hardcoded to Sydney time (Australia/Sydney) for all UI/display:
+# - LAST UPDATED / time snapshot
+# - Date range picker
+# - Trend run times
+# - Everything the user sees
 hsg17_df = hsg17_df_utc.copy()
 if not hsg17_df.empty:
-    hsg17_df['timestamp'] = hsg17_df['timestamp'].dt.tz_convert(local_tz)
+    hsg17_df['timestamp'] = hsg17_df['timestamp'].dt.tz_convert(SYDNEY_TZ)
 
 # Daily snapshot of the *full* current state (ignoring current sidebar filters)
 # This gives a restore point for the "as of end of day" view the cards are showing.
-# Runs once per calendar day on first load after midnight.
+# Runs once per calendar day on first load after midnight (using Sydney time for "today").
 # We snapshot the UTC version so times in the .xlsx are always canonical UTC.
 try:
     if not hsg17_df_utc.empty:
@@ -523,7 +528,8 @@ try:
         save_daily_snapshot(hsg17_df_utc, full_latest)
 
         # Also save the nice formatted stakeholder report for today (if not already)
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        # Use Sydney time so the daily snapshot boundary matches the user's timezone.
+        today_str = datetime.now(SYDNEY_TZ).strftime("%Y-%m-%d")
         snap_dir = Path(__file__).parent.parent / "data" / "snapshots"
         formatted = snap_dir / f"HSG17_Summary_Report_{today_str}.xlsx"
         if not formatted.exists():
@@ -618,9 +624,8 @@ if not current.empty:
         ts = pd.Timestamp(ts)
         if ts.tz is None:
             ts = ts.tz_localize('UTC')
-        # Always convert to the current machine's local TZ for display
-        # (ensures LAST UPDATED / snapshot time shows in your right time zone)
-        local_ts = ts.tz_convert(local_tz)
+        # Hardcoded Sydney TZ for the "time snapshot" (LAST UPDATED)
+        local_ts = ts.tz_convert(SYDNEY_TZ)
         last_ts = local_ts.strftime("%Y-%m-%d %H:%M")
 
 def _metric_card(label, value, icon, c1, c2, sub=""):

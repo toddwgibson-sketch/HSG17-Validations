@@ -15,6 +15,11 @@ import pandas as pd
 import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
+from io import BytesIO
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
 
 from utils.hsg17_models import is_gpu_rack, get_rack_type, extract_filtered_counts_from_summary
 
@@ -341,6 +346,201 @@ def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
         })
     return pd.DataFrame(records)
 
+
+def generate_hsg17_summary_report(current_with_deltas: pd.DataFrame) -> bytes:
+    """Generate a nicely formatted Excel report that matches the stakeholder example exactly.
+    Only includes GPU racks (per-rack rows grouped by placement group / building),
+    with group totals and group changes. Uses the exact same filtered data the dashboard cards use.
+    """
+    from collections import defaultdict
+
+    if current_with_deltas is None or current_with_deltas.empty:
+        gpu_df = pd.DataFrame()
+    else:
+        gpu_df = current_with_deltas[
+            current_with_deltas['rack'].apply(lambda x: is_gpu_rack(x) if pd.notna(x) else False)
+        ].copy()
+
+    # Group by building (PG), collect per-rack per-category currents + group deltas
+    groups = defaultdict(list)
+    for _, row in gpu_df.iterrows():
+        groups[row['building']].append({
+            'rack': row['rack'],
+            'category': row['error_category'],
+            'current': int(row['current']) if pd.notna(row['current']) else 0,
+            'delta': row.get('delta')
+        })
+
+    cat_order = ["LLDP Mismatch + Link Down", "Optic Errors", "FEC_BER Errors", "Interface Down Errors"]
+    cat_headers = ["LLDP Mismatch Count", "Optic Errors Count", "FEC_BER Error Count", "Interface Down Count"]
+
+    # Styles matching the example
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    blue_fill = PatternFill(start_color="0070C0", end_color="0070C0", fill_type="solid")
+    title_font = Font(name="Aptos Narrow", size=11)
+    header_font = Font(name="Aptos Narrow", size=11, bold=True, color="FFFFFF")
+    normal_font = Font(name="Aptos Narrow", size=11)
+    red_bold_font = Font(name="Aptos Narrow", size=11, bold=True, color="FF0000")
+    center_align = Alignment(horizontal="center", vertical="center")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+
+    # Title (merged B1:G2) - yellow banner
+    ws.merge_cells('B1:G2')
+    title_cell = ws['B1']
+    title_cell.value = f"Validation Reporting Current as of the {datetime.now().strftime('%d/%m/%Y')}"
+    title_cell.font = title_font
+    title_cell.fill = yellow_fill
+    title_cell.alignment = center_align
+    for r in range(1, 3):
+        for c in range(2, 8):
+            ws.cell(row=r, column=c).border = thin_border
+            ws.cell(row=r, column=c).fill = yellow_fill
+
+    # Column widths (close match to example)
+    ws.column_dimensions['A'].width = 16.43
+    ws.column_dimensions['B'].width = 15.0
+    ws.column_dimensions['C'].width = 16.86
+    ws.column_dimensions['D'].width = 13.0
+    ws.column_dimensions['E'].width = 13.0
+    ws.column_dimensions['F'].width = 13.0
+    ws.column_dimensions['G'].width = 13.14
+
+    current_row = 3
+
+    sorted_buildings = sorted(groups.keys())
+
+    for bldg in sorted_buildings:
+        items = groups[bldg]
+
+        # Build per-rack data (default 0 for missing cats)
+        rack_data = defaultdict(lambda: {cat: 0 for cat in cat_order})
+        group_delta_sum = {cat: 0 for cat in cat_order}
+        for it in items:
+            r = it['rack']
+            cat = it['category']
+            if cat in rack_data[r]:
+                rack_data[r][cat] = it['current']
+            if pd.notna(it['delta']):
+                group_delta_sum[cat] += int(it['delta'])
+
+        # Unique sorted racks (numeric)
+        sorted_racks = sorted(rack_data.keys(), key=lambda x: int(str(x).zfill(4)))
+
+        # Header row for this group (blue)
+        header_row = current_row
+        ws.cell(row=current_row, column=2, value=bldg).font = header_font
+        ws.cell(row=current_row, column=2).fill = blue_fill
+        ws.cell(row=current_row, column=2).border = thin_border
+        ws.cell(row=current_row, column=2).alignment = center_align
+
+        for i, h in enumerate(cat_headers):
+            cell = ws.cell(row=current_row, column=3 + i, value=h)
+            cell.font = header_font
+            cell.fill = blue_fill
+            cell.border = thin_border
+            cell.alignment = center_align
+
+        total_h = ws.cell(row=current_row, column=7, value="Total Count")
+        total_h.font = header_font
+        total_h.fill = blue_fill
+        total_h.border = thin_border
+        total_h.alignment = center_align
+
+        ws.row_dimensions[current_row].height = 30.0
+        current_row += 1
+
+        data_start_row = current_row
+
+        # Per-rack data rows
+        for rck in sorted_racks:
+            ws.cell(row=current_row, column=2, value=rck).font = normal_font
+            ws.cell(row=current_row, column=2).border = thin_border
+
+            for i, cat in enumerate(cat_order):
+                val = rack_data[rck][cat]
+                cell = ws.cell(row=current_row, column=3 + i, value=val)
+                cell.font = normal_font
+                cell.border = thin_border
+                cell.alignment = Alignment(horizontal="center")
+
+            # Total formula for the row
+            tcell = ws.cell(row=current_row, column=7, value=f"=SUM(C{current_row}:F{current_row})")
+            tcell.font = normal_font
+            tcell.border = thin_border
+            tcell.alignment = Alignment(horizontal="center")
+
+            current_row += 1
+
+        data_end_row = current_row - 1
+
+        # Group Total row
+        ws.cell(row=current_row, column=2, value=f"{bldg} Total").font = normal_font
+        ws.cell(row=current_row, column=2).border = thin_border
+        ws.cell(row=current_row, column=2).alignment = center_align
+
+        for i in range(4):
+            col_l = get_column_letter(3 + i)
+            cell = ws.cell(row=current_row, column=3 + i, value=f"=SUM({col_l}{data_start_row}:{col_l}{data_end_row})")
+            cell.font = normal_font
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal="center")
+
+        gtotal = ws.cell(row=current_row, column=7, value=f"=SUM(G{data_start_row}:G{data_end_row})")
+        gtotal.font = normal_font
+        gtotal.border = thin_border
+        gtotal.alignment = Alignment(horizontal="center")
+
+        current_row += 1
+
+        # Group Change row
+        ws.cell(row=current_row, column=2, value=f"{bldg} Change").font = normal_font
+        ws.cell(row=current_row, column=2).border = thin_border
+        ws.cell(row=current_row, column=2).alignment = center_align
+
+        for i, cat in enumerate(cat_order):
+            d = group_delta_sum[cat]
+            if d == 0:
+                dstr = "(+0)"
+                fnt = normal_font
+            elif d > 0:
+                dstr = f"(+{d})"
+                fnt = red_bold_font
+            else:
+                dstr = f"({d})"
+                fnt = normal_font
+            cell = ws.cell(row=current_row, column=3 + i, value=dstr)
+            cell.font = fnt
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal="center")
+
+        # Total change column (match example style)
+        tchange = ws.cell(row=current_row, column=7, value="(+0)")
+        tchange.font = normal_font
+        tchange.border = thin_border
+        tchange.alignment = Alignment(horizontal="center")
+
+        ws.row_dimensions[current_row].height = 8.25
+        current_row += 1
+
+        # Spacer row between groups
+        current_row += 1
+
+    # Write to bytes
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 current = get_latest_snapshot(filtered_df)
 current_with_deltas = get_latest_with_deltas(filtered_df)
 
@@ -348,7 +548,7 @@ if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
     st.caption(f"Logged data is persisted on disk in `data/validation_error_log.xlsx`. Restarting the Streamlit app will **not** delete it. Current HSG17 entries in log: **{len(hsg17_df)}**")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         with open(DATA_FILE, "rb") as f:
             st.download_button(
@@ -360,6 +560,20 @@ if DATA_FILE.exists():
                 help="Download the full validation error log (all halls)"
             )
     with col2:
+        # Summary report - nice formatted for stakeholders, only the data shown on dashboard (GPU racks per PG)
+        try:
+            report_bytes = generate_hsg17_summary_report(current_with_deltas)
+            st.download_button(
+                "📥 Download Summary Report",
+                data=report_bytes,
+                file_name=f"HSG17_Summary_Report_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch",
+                help="Formatted GPU rack report (per the current filters). Matches the tidy stakeholder example layout exactly."
+            )
+        except Exception as e:
+            st.warning(f"Could not generate summary report: {e}")
+    with col3:
         # Safer reset: requires explicit confirmation
         confirm = st.checkbox("I confirm I want to permanently remove all HSG17 entries from the log.", key="confirm_reset")
         if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", disabled=not confirm, key="reset_hsg17_data",

@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
 
-from utils.hsg17_models import is_gpu_rack
+from utils.hsg17_models import is_gpu_rack, get_rack_type
 
 st.set_page_config(
     page_title="HSG17 Dashboard",

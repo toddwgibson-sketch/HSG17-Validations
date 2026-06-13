@@ -575,31 +575,20 @@ if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
     st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**")
-    col1, col2 = st.columns(2)
-    with col1:
-        with open(DATA_FILE, "rb") as f:
-            st.download_button(
-                "📥 Download Error Log",
-                data=f,
-                file_name="HSG17_validation_error_log.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
-                help="Download the full validation error log (all halls)"
-            )
-    with col2:
-        # Summary report - nice formatted for stakeholders, only the data shown on dashboard (GPU racks per PG)
-        try:
-            report_bytes = generate_hsg17_summary_report(current_with_deltas)
-            st.download_button(
-                "📥 Download Summary Report",
-                data=report_bytes,
-                file_name=f"HSG17_Summary_Report_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
-                help="Formatted GPU rack report (per the current filters). Matches the tidy stakeholder example layout exactly."
-            )
-        except Exception as e:
-            st.warning(f"Could not generate summary report: {e}")
+    # Summary report kept at top (the formatted one for stakeholders).
+    # Error Log moved into Danger Zone for the restore/backup flow.
+    try:
+        report_bytes = generate_hsg17_summary_report(current_with_deltas)
+        st.download_button(
+            "📥 Download Summary Report",
+            data=report_bytes,
+            file_name=f"HSG17_Summary_Report_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch",
+            help="Formatted GPU rack report (per the current filters)."
+        )
+    except Exception as e:
+        st.warning(f"Could not generate summary report: {e}")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -982,16 +971,21 @@ else:
 # Moved the reset all the way to the bottom to reduce accidental clicks.
 # Only relevant for testing.
 st.divider()
-st.markdown("### ⚠️ Danger Zone — Reset Data (testing only)")
-st.caption("""Backups (full timestamped copies) are created silently in the background on every report. 
+st.markdown("### ⚠️ Danger Zone")
+st.caption("Download Error Log here (the main data file for backup/restore). Reset (testing only) at the bottom.")
 
-Use the button below to force a fresh one right now and download the file immediately (your "just in case" before reboot). Only the single latest is shown for easy access.
+# Just the Error Log download - that's all that's needed for the "just in case" flow.
+with open(DATA_FILE, "rb") as f:
+    st.download_button(
+        "📥 Download Error Log",
+        data=f,
+        file_name="HSG17_validation_error_log.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+        help="The full validation error log. Copy this file over the main one in data/ to restore everything."
+    )
 
-If the dashboard is ever empty after reboot/crash: stop app, copy the latest file from data/backups/ over data/validation_error_log.xlsx, restart. (Same for snapshots/ files.)
-
-This reset button permanently removes **all** HSG17 entries. Only for testing.""")
-
-# Safer reset at the bottom
+# Reset at the very bottom
 confirm = st.checkbox("I confirm I want to permanently remove all HSG17 entries from the log.", key="confirm_reset")
 if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", disabled=not confirm, key="reset_hsg17_data",
              help="Removes all HSG17 entries from the log so you can start fresh with real data. This only affects the dashboard feed."):
@@ -1016,74 +1010,3 @@ if st.button("🗑️ Reset HSG17 Data", type="secondary", width="stretch", disa
             st.info("No data file found to clear.")
     except Exception as e:
         st.error(f"Failed to clear data: {e}")
-
-# Manual fresh backup button moved here to the bottom (incase / reboot safety only).
-# Does the backup + snapshot side effects then immediately offers the download like a report.
-if "pending_backup" not in st.session_state:
-    st.session_state.pending_backup = None
-
-st.markdown("**📥 Fresh manual backup (for reboot peace of mind)**")
-if st.button("📥 Download Fresh Backup (timestamped full log)", key="manual_backup_btn", width="stretch",
-             help="Forces a fresh timestamped backup copy to data/backups/ right now + snapshots, then gives you a direct download button for the file. Use before reboots."):
-    try:
-        bpath = backup_log()
-        if bpath and bpath.exists():
-            with open(bpath, "rb") as f:
-                data = f.read()
-            st.session_state.pending_backup = (bpath.name, data)
-            # Also snapshot for full safety (background)
-            try:
-                full_hsg17 = df[df['hall'] == "HSG17"].copy()
-                if not full_hsg17.empty:
-                    full_latest = get_latest_snapshot(full_hsg17)
-                    save_daily_snapshot(full_hsg17, full_latest)
-            except Exception:
-                pass
-        else:
-            st.session_state.pending_backup = ("failed", None)
-    except Exception as e:
-        st.session_state.pending_backup = (f"error:{e}", None)
-
-pb = st.session_state.get("pending_backup")
-if pb:
-    name, data = pb
-    if name == "failed":
-        st.error("No log file to backup yet (process a report first).")
-    elif name.startswith("error"):
-        st.error(f"Backup failed: {name}")
-    elif data:
-        st.success(f"Backup ready — {name}")
-        st.download_button(
-            f"⬇️ Download {name}",
-            data=data,
-            file_name=name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch",
-            help="This is your fresh full backup copy. Save it like any report. Also saved in data/backups/."
-        )
-    if st.button("✖ dismiss", key="clear_pending_backup"):
-        st.session_state.pending_backup = None
-        st.rerun()
-
-# Always show latest backup download in Danger Zone.
-# Worst case: download this, copy over main log, restart.
-try:
-    backup_dir = Path(__file__).parent.parent / "data" / "backups"
-    if backup_dir.exists():
-        backups = sorted(backup_dir.glob("validation_error_log_*.xlsx"), reverse=True)
-        if backups:
-            latest = backups[0]
-            st.markdown(f"**Latest background backup:** `{latest.name}`")
-            with open(latest, "rb") as f:
-                st.download_button(
-                    "📥 Download latest backup",
-                    data=f,
-                    file_name=latest.name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    width="stretch",
-                    help="Full copy of the log created automatically in the background (or via the manual button above). Use this to restore if needed."
-                )
-        else:
-            st.caption("No backups yet – use the manual backup button above or process a report to create one.")
-except Exception:
-    pass

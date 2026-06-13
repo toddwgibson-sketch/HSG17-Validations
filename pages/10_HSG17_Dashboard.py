@@ -574,7 +574,7 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
     st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
-    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). See the Danger Zone at the very bottom for full details + exact restore steps if the log ever looks empty. Backups happen silently in the background (no list here).")
+    st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**. **Your data is safe on disk** – every upload creates a full backup (in data/backups/), and daily snapshots are saved (in data/snapshots/). See the Danger Zone at the very bottom for full details + exact restore steps if the log ever looks empty. Backups happen silently in the background (no list here). The main log file only appends when you actually process a new report; it is the full history, not a 'live current' table.")
     col1, col2 = st.columns(2)
     with col1:
         with open(DATA_FILE, "rb") as f:

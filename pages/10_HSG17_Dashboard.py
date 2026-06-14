@@ -499,7 +499,7 @@ def load_data():
     if not df.empty:
         # Treat stored timestamps as UTC (we log in UTC now).
         # Keep as UTC internally for consistency (snapshots, calculations).
-        # UI display, LAST UPDATED (Sydney) ("time snapshot"), date filters, etc. are converted to hardcoded Sydney time.
+        # UI display, "Last Updated - Sydney Time" ("time snapshot"), date filters, etc. are converted to hardcoded Sydney time.
         if getattr(df['timestamp'].dt, 'tz', None) is None:
             df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
     return df.dropna(subset=['timestamp'])
@@ -510,7 +510,7 @@ df = load_data()
 hsg17_df_utc = df[df['hall'] == "HSG17"].copy()
 
 # Hardcoded to Sydney time (Australia/Sydney) for all UI/display:
-# - LAST UPDATED (Sydney) / time snapshot
+# - "Last Updated - Sydney Time" / time snapshot
 # - Date range picker
 # - Trend run times
 # - Everything the user sees
@@ -589,16 +589,13 @@ current_with_deltas = get_latest_with_deltas(filtered_df)
 
 if DATA_FILE.exists():
     st.markdown('<div class="dashboard-panel">', unsafe_allow_html=True)
-    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#94a3b8; margin-bottom:4px;'>Data Management (unified — 01 LV Portal + 02 Slack + 03 T0-Host LVV)</div>", unsafe_allow_html=True)
     st.caption(f"Current HSG17 entries in log: **{len(hsg17_df)}**")
-    # Summary report kept at top (the formatted one for stakeholders).
-    # Error Log moved into Danger Zone for the restore/backup flow.
     try:
         report_bytes = generate_hsg17_summary_report(current_with_deltas)
         st.download_button(
             "📥 Download Summary Report",
             data=report_bytes,
-            file_name=f"HSG17_Summary_Report_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+            file_name=f"HSG17_Summary_Report_{datetime.now(SYDNEY_TZ).strftime('%Y-%m-%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width="stretch",
             help="Formatted GPU rack report (per the current filters)."
@@ -770,7 +767,7 @@ if not current.empty:
                     bar_html += '</div>'
                     st.markdown(bar_html, unsafe_allow_html=True)
 
-                st.markdown('<div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; margin-top: 4px;">', unsafe_allow_html=True)
+                st.markdown('<div style="background: rgba(15,23,42,0.7); border-radius: 6px; padding: 4px; margin-top: 4px; color:#f8fafc;">', unsafe_allow_html=True)
                 st.markdown(list_html, unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -870,7 +867,7 @@ if not current.empty:
                         delta_str = f"({d_int:+d})"
                         delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
 
-                    list_html += f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>{delta_html}<br>"
+                    list_html += f"<span style='color:{color}; font-weight:600'>■</span> <span style='color:#f8fafc'>{label}</span>: <b style='color:#f8fafc'>{val}</b>{delta_html}<br>"
                 list_html += "</div>"
 
                 with cols[i]:
@@ -886,7 +883,7 @@ if not current.empty:
                     st.markdown('<div style="padding: 0 12px 8px;">', unsafe_allow_html=True)
 
                     if bldg:
-                        st.markdown(f'<div style="font-size:0.7rem; opacity:0.6; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="font-size:0.7rem; color:#94a3b8; opacity:0.9; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)
 
                     st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:8px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
 
@@ -899,7 +896,7 @@ if not current.empty:
                         bar_html += '</div>'
                         st.markdown(bar_html, unsafe_allow_html=True)
 
-                    st.markdown('<div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; margin-top: 4px; font-size:0.7rem;">', unsafe_allow_html=True)
+                    st.markdown('<div style="background: rgba(15,23,42,0.7); border-radius: 6px; padding: 4px; margin-top: 4px; font-size:0.7rem; color:#f8fafc;">', unsafe_allow_html=True)
                     st.markdown(list_html, unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 

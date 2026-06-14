@@ -873,38 +873,23 @@ if not current.empty:
                 with cols[i]:
                     pill_text = f"🖥️ {rack_type} {rack}" if rack_type != "GPU" else f"🖥️ {rack}"
                     pill_color = bldg_pill_color.get(bldg, "#67e8f9")
-                    # Outer: solid dark, per-PG border ONLY on left/right/bottom (top:none + padding:0 kills any top empty/yellow/coloured strip or cutoff above the pill). Dark pill (rack name + single emoji) sits flush at very top, fully inside the bordered area as requested.
-                    st.markdown(f'<div class="hsg17-pg-card gpu-card" style="background: #0f172a; color: white; border-left: 2px solid {pill_color}; border-right: 2px solid {pill_color}; border-bottom: 2px solid {pill_color}; border-top: none; padding: 0; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3); border-radius: 12px; overflow: hidden;">', unsafe_allow_html=True)
-
-                    # Top dark rounded pill INSIDE the bordered card, rack name here (single 🖥️), flush top with 0 top margin + outer no top pad. 1.25rem font for the pill text.
-                    st.markdown(f'<div style="background: #1e2937; border-radius: 9999px; padding: 8px 16px; margin: 0 8px 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"> <span style="font-size:1.25rem; font-weight:700; color: white;">{pill_text}</span> </div>', unsafe_allow_html=True)
-
-                    # Main content area (sides padded here)
-                    st.markdown('<div style="padding: 0 12px 8px;">', unsafe_allow_html=True)
-
-                    if bldg:
-                        st.markdown(f'<div style="font-size:0.7rem; color:#94a3b8; opacity:0.9; margin-bottom:2px;">{bldg}</div>', unsafe_allow_html=True)
-
-                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:8px; color:#f8fafc;'>{total_str}</div>", unsafe_allow_html=True)
-
-                    if bar_data:
-                        total_for_bar = sum(d['Count'] for d in bar_data)
-                        bar_html = '<div style="height:16px; background: rgba(255,255,255,0.15); border-radius:999px; overflow:hidden; display:flex; margin:4px 0 6px; border:1px solid rgba(255,255,255,0.3);">'
-                        for d in bar_data:
-                            pct = (d['Count'] / total_for_bar * 100) if total_for_bar > 0 else 0
-                            bar_html += f'<div style="width:{pct}%; background:{d["Color"]}; height:100%;"></div>'
-                        bar_html += '</div>'
-                        st.markdown(bar_html, unsafe_allow_html=True)
-
-                    st.markdown('<div style="background: rgba(15,23,42,0.7); border-radius: 6px; padding: 4px; margin-top: 4px; font-size:0.7rem; color:#f8fafc;">', unsafe_allow_html=True)
-                    st.markdown(list_html, unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    # Bottom fill strip (per-PG color, matches the border/outline)
-                    st.markdown(f'<div style="height: 18px; background: linear-gradient(90deg, {pill_color}, #0f172a); border-radius: 0 0 8px 8px; margin: 8px -12px -8px;"></div>', unsafe_allow_html=True)
-
-                    st.markdown('</div>', unsafe_allow_html=True)  # close main padding
-                    st.markdown('</div>', unsafe_allow_html=True)  # close outer card
+                    # Build the entire card as ONE HTML block to prevent Streamlit light-mode CSS from overriding colors/text.
+                    # Forces dark card + light text for readability in both light and dark themes.
+                    card_html = f'''<div class="hsg17-pg-card gpu-card" style="background: #0f172a; color: #f8fafc; border-left: 2px solid {pill_color}; border-right: 2px solid {pill_color}; border-bottom: 2px solid {pill_color}; border-top: none; padding: 0; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3); border-radius: 12px; overflow: hidden;">
+    <div style="background: #1e2937; border-radius: 9999px; padding: 8px 16px; margin: 0 8px 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+        <span style="font-size:1.25rem; font-weight:700; color: #f8fafc;">{pill_text}</span>
+    </div>
+    <div style="padding: 0 12px 8px; background: #0f172a;">
+        {f'<div style="font-size:0.7rem; color:#94a3b8; opacity:0.9; margin-bottom:2px;">{bldg}</div>' if bldg else ''}
+        <div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:8px; color:#f8fafc;'>{total_str}</div>
+        {bar_html if bar_data else ''}
+        <div style="background: rgba(15,23,42,0.7); border-radius: 6px; padding: 4px; margin-top: 4px; font-size:0.7rem; color:#f8fafc;">
+            {list_html}
+        </div>
+        <div style="height: 18px; background: linear-gradient(90deg, {pill_color}, #0f172a); border-radius: 0 0 8px 8px; margin: 8px -12px -8px;"></div>
+    </div>
+</div>'''
+                    st.markdown(card_html, unsafe_allow_html=True)
 else:
     st.info("No GPU rack data after filters.")
 

@@ -12,17 +12,17 @@ def require_login():
         st.title("Login Required")
         st.markdown("HSG17 Validation Tools. U:Admin P:Admin")
 
-        with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Login")
+        # Use a plain button instead of st.form — form submit loads a separate
+        # JS chunk (FormSubmitContent) that intermittently fails on Streamlit Cloud.
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
 
-            if submitted:
-                if username.lower() == "admin" and password.lower() == "admin":
-                    st.session_state.authenticated = True
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password")
+        if st.button("Login", key="login_button", type="primary"):
+            if username.lower() == "admin" and password.lower() == "admin":
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
 
         st.stop()
 

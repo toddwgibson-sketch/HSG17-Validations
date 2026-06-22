@@ -305,16 +305,32 @@ def build_cutsheet_lookup(cut_df):
     Adapts to schema changes: only carries forward the fill columns that
     actually exist in the cutsheet. DMARC1/DMARC2 were dropped in later
     cutsheet revisions; the lookup still works without them.
+
+    Indexes each row by *both* ends of the link:
+      • DeviceA  → (Hostname, Interface)          — standard Slack / T0-side rows
+      • DeviceB  → (Z Hostname, Z Interface)        — T1-side rows such as the
+        optics-only ``t1_t0_optics_rx_tx`` report, where Hostname is the T1 device
+        but Source_port / DMARC1 / DMARC2 / Destination_port still come from
+        columns C–F on the same allconnections row.
     """
     candidate_cols = ['Source_port', 'DMARC1', 'DMARC2', 'Destination_port']
     fill_cols = [c for c in candidate_cols if c in cut_df.columns]
     lookup = {}
     for _, row in cut_df.iterrows():
-        key = (
+        vals = {c: row[c] for c in fill_cols}
+        a_key = (
             str(row['Hostname']).strip(),
             str(row['Interface']).strip(),
         )
-        lookup[key] = {c: row[c] for c in fill_cols}
+        if a_key[0] and a_key[1]:
+            lookup[a_key] = vals
+        if 'Z Hostname' in row.index and 'Z Interface' in row.index:
+            b_key = (
+                str(row['Z Hostname']).strip(),
+                str(row['Z Interface']).strip(),
+            )
+            if b_key[0] and b_key[1]:
+                lookup[b_key] = vals
     # Stash which columns were actually available so step 6 can use the same set
     lookup['__fill_cols__'] = fill_cols
     return lookup

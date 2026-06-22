@@ -16,6 +16,8 @@ Key v2 updates applied:
 - Groups are delineated with bold (medium) grid lines: thick top border on first row of group, thick bottom border on last row of group (thin borders otherwise).
 - New optional "Mismatch↔Downlink" cross-reference tab (mismatches whose Expected side appears as a downlink).
 - Updated L/R, fill, anchor, and rack-collection logic for the Act. column names.
+- Optics-only T1→T0 RX/TX reports (tab ``t1_t0_optics_rx_tx``) are normalized to the
+  standard Optics tab (Remote* → Z*, auxiliary link/rollup tabs dropped).
 - All other formatting, pink Possible/Active-Z columns, Summary, grey-out, autofit, NOTE+filter, tab order, and final top-2-rack rename preserved.
 '''
 
@@ -36,7 +38,8 @@ from openpyxl.utils import get_column_letter
 
 TAB_ALIASES = {
     'lldp':         ('lldp_sp', 'full_path_lldp_with_int_down'),
-    'optics':       ('optics_rx_tx_threshold', 'optics_rx_tx_threshold_with_pp'),
+    'optics':       ('optics_rx_tx_threshold', 'optics_rx_tx_threshold_with_pp',
+                     't1_t0_optics_rx_tx'),
     'interfaces':   ('interfaces_sp', 'interfaces_sp_with_pp'),
     'combined_fec': ('combined_fec', 'combined_fec_with_pp'),
 }
@@ -53,6 +56,9 @@ TABS_TO_REMOVE = (
     'pre_fec_ber_threshold_with_pp',
     'unknown_test_sp',
     'summary',    # source report summary; our Summary tab replaces it
+    # optics-only DG / T1→T0 RX-TX reports ship these auxiliary tabs
+    't1_t0_link_ports',
+    'rollup_summary',
 )
 
 # Columns to strip from every tab in the final output. Exact-match,
@@ -66,6 +72,9 @@ COLUMNS_TO_REMOVE = (
     # combined_fec source noise:
     'Remote Host',
     'Remote Interface',
+    'Remote Rack',
+    'Remote Elevation',
+    'PP Info',
     'Mapped Remote Host',
     'Mapped Remote Interface',
     'Mapped Remote Rack',
@@ -100,6 +109,27 @@ def find_tab(wb_or_sheetnames, key):
         if alias in names:
             return alias
     return None
+
+
+def normalize_optics_source_df(df):
+    """Normalize variant optics source schemas to canonical column names.
+
+    The optics-only T1→T0 RX/TX report (tab ``t1_t0_optics_rx_tx``) ships
+    remote-end columns as ``Remote Host`` / ``Remote Interface`` / etc.
+    Rename those to the standard ``Z *`` names so the rest of the pipeline
+    (cutsheet fill, Summary rack counts, grey-out) behaves like full reports.
+    """
+    df = df.copy()
+    remote_map = {
+        'Remote Host':       'Z Hostname',
+        'Remote Interface':  'Z Interface',
+        'Remote Rack':       'Z Rack',
+        'Remote Elevation':  'Z Elevation',
+    }
+    rename = {src: dst for src, dst in remote_map.items() if src in df.columns}
+    if rename:
+        df.rename(columns=rename, inplace=True)
+    return df
 
 
 # ── Style helpers ────────────────────────────────────────────────────────────
@@ -382,10 +412,11 @@ def process_file(input_path, output_path, cut_df, log):
         # Extra cols introduced by the *_with_pp variant — drop them too.
         drop_cols = {'Transceiver', 'Channel',
                      'Min Threshold (dBm)', 'Max Threshold (dBm)',
-                     'PP_A', 'PP_Z', 'Z_end_host', 'Z_end_intf',
+                     'PP_A', 'PP_Z', 'PP Info', 'Z_end_host', 'Z_end_intf',
                      'rack_z', 'Z_Rack', 'Z_Elevation', 'Index',
                      'Status', 'Placement Group'}
         optics_df = pd.read_excel(input_path, sheet_name=optics_src)
+        optics_df = normalize_optics_source_df(optics_df)
         optics_df.drop(columns=[c for c in drop_cols if c in optics_df.columns], inplace=True)
         # Put 'Metric' first, then 'Measured (dBm)', so both columns can be
         # frozen and stay visible while scrolling horizontally.

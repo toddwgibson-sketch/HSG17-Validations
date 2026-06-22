@@ -1,5 +1,6 @@
 import streamlit as st
 
+
 def require_login():
     """
     Simple username/password gate.
@@ -23,6 +24,15 @@ def require_login():
                 st.rerun()
             else:
                 st.error("Invalid username or password")
+
+        if st.button("Reboot app (click if you're having dramas)", key="login_reboot"):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.session_state.clear()
+            st.html(
+                "<script>window.location.reload();</script>",
+                unsafe_allow_javascript=True,
+            )
 
         st.stop()
 

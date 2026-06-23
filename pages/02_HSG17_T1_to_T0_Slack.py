@@ -126,7 +126,7 @@ if run_btn and cutsheet_uploader and input_uploaders:
             output_paths = []
             for in_path_str in slack_tmp_paths:
                 in_p = Path(in_path_str)
-                out_name = in_p.stem + "_formatted.xlsx"
+                out_name = in_p.stem + "_FORMATTED.xlsx"
                 out_p = tmpdir / out_name
                 try:
                     produced = process_file(str(in_p), str(out_p), cut_df, log=lambda *a: None)

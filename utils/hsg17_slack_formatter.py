@@ -112,6 +112,30 @@ COLUMNS_TO_REMOVE = (
 # here if you want Z-side info in additional tabs.
 Z_FILL_TABS = ('Optics', 'combined_fec', 'Downlinks', 'Mismatches')
 
+def formatted_output_path(input_path, output_path) -> str:
+    """Stable output name: ``<input-stem>_FORMATTED.xlsx`` (filesystem-safe)."""
+    stem = os.path.splitext(os.path.basename(input_path))[0].strip()
+    stem = re.sub(r'[<>:"/\\|?*]', '_', stem).rstrip('. ')
+    if stem.upper().endswith('_FORMATTED'):
+        stem = stem[: -len('_FORMATTED')]
+    return os.path.join(os.path.dirname(output_path) or '.', f"{stem}_FORMATTED.xlsx")
+
+
+def finalize_output(input_path, output_path, log) -> str:
+    """Rename saved workbook to the input-derived FORMATTED filename."""
+    try:
+        final = formatted_output_path(input_path, output_path)
+        if os.path.abspath(final) != os.path.abspath(output_path):
+            load_workbook(output_path).save(final)
+            os.remove(output_path)
+        log(f"  ✓ Saved → {os.path.basename(final)}")
+        return final
+    except Exception as exc:
+        log(f"  ⚠ Could not rename output: {exc}")
+        log(f"  ✓ Saved → {os.path.basename(output_path)}")
+        return output_path
+
+
 def find_tab(wb_or_sheetnames, key):
     """Return the actual tab name in the workbook for the given logical key,
     or None if no alias is present."""
@@ -863,34 +887,7 @@ def process_integrated_file(input_path, output_path, cut_df, log):
     wb._sheets = [wb[n] for n in ordered + leftover]
 
     wb.save(output_path)
-
-    # ── Rename by top-2 Rack numbers (kept as text) ─────────────────────────
-    # In this format the 'Rack' column is the source-side rack and flips with
-    # Direction, so it isn't a reliable identifier on its own. The racks being
-    # audited are the T1/T2-tier switches (4-digit, >= 1000; T0 racks are 0xxx
-    # i.e. < 1000). Gather both Rack and Z Rack, prefer the T1/T2 racks, and
-    # fall back to all racks only if none qualify.
-    try:
-        rack_vals = []
-        for racks in rack_by_tab.values():
-            rack_vals += racks.get('Rack', [])
-            rack_vals += racks.get('Z Rack', [])
-        high = [v for v in rack_vals if v.isdigit() and int(v) >= 1000]
-        pool = high if high else rack_vals
-        if pool:
-            top2     = [r for r, _ in Counter(pool).most_common(2)]
-            new_name = '+'.join(top2) + '.xlsx'
-            new_path = os.path.join(os.path.dirname(output_path), new_name)
-            load_workbook(output_path).save(new_path)
-            if new_path != output_path:
-                os.remove(output_path)
-            log(f"  ✓ Saved → {new_name}")
-            return new_path
-    except Exception as e:
-        log(f"  ⚠ Could not rename by Rack: {e}")
-
-    log(f"  ✓ Saved → {os.path.basename(output_path)}")
-    return output_path
+    return finalize_output(input_path, output_path, log)
 
 
 # ── Core processor ───────────────────────────────────────────────────────────
@@ -1787,35 +1784,7 @@ def process_file(input_path, output_path, cut_df, log):
             del wb[existing]
 
     wb.save(output_path)
-
-    # ── 9. Rename by top-2 Rack numbers ─────────────────────────────────────
-    try:
-        all_racks = []
-        for sheet_name in wb.sheetnames:
-            ws     = wb[sheet_name]
-            header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column+1)]
-            if 'Rack' in header:
-                rc = header.index('Rack') + 1
-                for r in range(2, ws.max_row + 1):
-                    val = ws.cell(row=r, column=rc).value
-                    if val is not None:
-                        try: all_racks.append(int(float(str(val))))
-                        except ValueError: pass
-        if all_racks:
-            top2     = [str(r) for r, _ in Counter(all_racks).most_common(2)]
-            new_name = '+'.join(top2) + '.xlsx'
-            new_path = os.path.join(os.path.dirname(output_path), new_name)
-            load_workbook(output_path).save(new_path)
-            if new_path != output_path:
-                os.remove(output_path)
-            log(f"  ✓ Saved → {new_name}")
-            return new_path
-    except Exception as e:
-        log(f"  ⚠ Could not rename by Rack: {e}")
-
-    log(f"  ✓ Saved → {os.path.basename(output_path)}")
-
-    return output_path
+    return finalize_output(input_path, output_path, log)
 
 
 # ── Mismatch pair detection / highlight ──────────────────────────────────────

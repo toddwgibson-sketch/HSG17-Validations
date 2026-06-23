@@ -1,27 +1,17 @@
 #!/usr/bin/env python3
-r'''
-HSG17 T1-to-T0 Slack Formatter — Core Logic (v2)
-Sourced exactly from the updated reference (slack_formatter_T1toT0.v2).
+r"""
+HSG17 T1-to-T0 Slack Formatter — core logic (GFAB CODE19 reference).
 
-This module contains ONLY the pure formatting logic (no tkinter, no Streamlit, no HSG17-specific logging).
-It is intended to be imported by the Streamlit page (02_HSG17_T1_to_T0_Slack.py) and/or other tools.
+Imported by pages/02_HSG17_T1_to_T0_Slack.py. Formatting only — no tkinter/Streamlit.
+Synced from GFAB_CODE19_T1_T0 reference script.
 
-The output Excel it produces must be identical to what the v2 reference script produces
-on the same inputs (cutsheet Installation Sheet + Slack-style validation reports).
+Supports legacy slack reports, integrated normalized exports, and T1 Optics /
+T1 combined_fec tabs built from t1_t0_* source sheets.
+"""
 
-Key v2 updates applied:
-- A-side columns in Downlinks/Mismatches use "Act." prefix (Act. Hostname, Act. Interface, Act. L/R, Act. Rack, Act. Elevation).
-- Generalized mismatch grouping via Union-Find on (Act. side <-> Possible side) to handle pairs *and* groups of 3+ interconnected mismatches.
-- Removed all orange/yellow fill coloring for mismatch groups.
-- Groups are delineated with bold (medium) grid lines: thick top border on first row of group, thick bottom border on last row of group (thin borders otherwise).
-- New optional "Mismatch↔Downlink" cross-reference tab (mismatches whose Expected side appears as a downlink).
-- Updated L/R, fill, anchor, and rack-collection logic for the Act. column names.
-- Optics-only T1→T0 RX/TX reports (tab ``t1_t0_optics_rx_tx``) are normalized to the
-  standard Optics tab (Remote* → Z*, auxiliary link/rollup tabs dropped).
-- All other formatting, pink Possible/Active-Z columns, Summary, grey-out, autofit, NOTE+filter, tab order, and final top-2-rack rename preserved.
-'''
-
+import sys
 import os
+import re
 import shutil
 from collections import Counter
 
@@ -38,8 +28,7 @@ from openpyxl.utils import get_column_letter
 
 TAB_ALIASES = {
     'lldp':         ('lldp_sp', 'full_path_lldp_with_int_down'),
-    'optics':       ('optics_rx_tx_threshold', 'optics_rx_tx_threshold_with_pp',
-                     't1_t0_optics_rx_tx'),
+    'optics':       ('optics_rx_tx_threshold', 'optics_rx_tx_threshold_with_pp'),
     'interfaces':   ('interfaces_sp', 'interfaces_sp_with_pp'),
     'combined_fec': ('combined_fec', 'combined_fec_with_pp'),
 }
@@ -54,12 +43,28 @@ TABS_TO_REMOVE = (
     'sp_fans',
     'optics_temp',
     'pre_fec_ber_threshold_with_pp',
+    'cert_sp',
+    'cannot_decode_sp',
     'unknown_test_sp',
-    'summary',    # source report summary; our Summary tab replaces it
-    # optics-only DG / T1→T0 RX-TX reports ship these auxiliary tabs
-    't1_t0_link_ports',
-    'rollup_summary',
 )
+
+# Only these tabs survive in the final output. Anything else is dropped,
+# regardless of TABS_TO_REMOVE. Case-insensitive match.
+TABS_TO_KEEP = (
+    'Summary',
+    'Downlinks',
+    'Mismatches',
+    'Optics',
+    'combined_fec',
+    'T1 Optics',
+    'T1 combined_fec',
+)
+
+# Output tabs built from the t1_t0_* source tabs. They mirror Optics /
+# combined_fec but describe the T1-side of each T1↔T0 link. Kept in a set so
+# the generic A-side enrichment loops can skip them (they get their own
+# Z-side enrichment in step 3c).
+T1_TABS = ('T1 Optics', 'T1 combined_fec')
 
 # Columns to strip from every tab in the final output. Exact-match,
 # case-sensitive. Edit this list to drop more columns globally.
@@ -67,14 +72,20 @@ COLUMNS_TO_REMOVE = (
     'Building',
     'Act. Building',
     'Exp. Building',
+    # Expected-side columns (dropped per new-format request; harmless no-op
+    # on old-format files that may not have all of these):
+    'Expected Hostname',
+    'Exp. Interface',
+    'Exp. L/R',
+    'Exp. Rack',
+    'Exp. Elevation',
     'PP_A',
     'PP_Z',
     # combined_fec source noise:
+    'Lock Status',
+    'Pre-FEC BER',
     'Remote Host',
     'Remote Interface',
-    'Remote Rack',
-    'Remote Elevation',
-    'PP Info',
     'Mapped Remote Host',
     'Mapped Remote Interface',
     'Mapped Remote Rack',
@@ -90,14 +101,16 @@ COLUMNS_TO_REMOVE = (
     'Index',
     'Source Sheet',
     'Placement Group',
+    'Cable Info',
+    'A Transceiver SKU',
+    'Z Transceiver SKU',
 )
 
 # Tabs that should receive Z-side info (Z Hostname, Z Interface,
 # Z Rack, Z Elevation) pulled from the cutsheet by Hostname+Interface match.
 # Columns are inserted right after Destination_port. Add more tab names
 # here if you want Z-side info in additional tabs.
-Z_FILL_TABS = ('Optics', 'combined_fec')
-
+Z_FILL_TABS = ('Optics', 'combined_fec', 'Downlinks', 'Mismatches')
 
 def find_tab(wb_or_sheetnames, key):
     """Return the actual tab name in the workbook for the given logical key,
@@ -111,33 +124,10 @@ def find_tab(wb_or_sheetnames, key):
     return None
 
 
-def normalize_optics_source_df(df):
-    """Normalize variant optics source schemas to canonical column names.
-
-    The optics-only T1→T0 RX/TX report (tab ``t1_t0_optics_rx_tx``) ships
-    remote-end columns as ``Remote Host`` / ``Remote Interface`` / etc.
-    Rename those to the standard ``Z *`` names so the rest of the pipeline
-    (cutsheet fill, Summary rack counts, grey-out) behaves like full reports.
-    """
-    df = df.copy()
-    remote_map = {
-        'Remote Host':       'Z Hostname',
-        'Remote Interface':  'Z Interface',
-        'Remote Rack':       'Z Rack',
-        'Remote Elevation':  'Z Elevation',
-    }
-    rename = {src: dst for src, dst in remote_map.items() if src in df.columns}
-    if rename:
-        df.rename(columns=rename, inplace=True)
-    return df
-
-
 # ── Style helpers ────────────────────────────────────────────────────────────
 
 PINK   = 'FFB6C1'
 YELLOW = 'FFFF00'
-ORANGE = 'FFA500'   # reciprocal-swap pair highlight
-
 
 def thin_border():
     s = Side(style='thin', color='000000')
@@ -246,35 +236,18 @@ def write_sheet(wb, name, df):
 
 # ── Reference-file loaders ───────────────────────────────────────────────────
 
-def load_cutsheet(path):
-    """Load the allconnections cutsheet.
-
-    Supports two schemas:
-      • Legacy  — sheet named 'Installation Sheet' with columns Hostname,
-                  Interface, Z Hostname, Z Interface already split out.
-      • New     — sheet named 'Sheet1' where DeviceA/DeviceB are combined
-                  'hostname interface' strings. This function normalises both
-                  into the same frame with canonical column names so the rest
-                  of the pipeline is unchanged.
-    """
-    import re as _re
+def _load_cutsheet_deviceab(path):
+    """QFAB allconnections (Sheet1 / DeviceA+DeviceB) — same normalisation as before."""
     xl = pd.ExcelFile(path)
-
-    if 'Installation Sheet' in xl.sheet_names:
-        return pd.read_excel(path, sheet_name='Installation Sheet')
-
-    # ── New schema: Sheet1 with DeviceA / DeviceB combined ──────────────────
     df = pd.read_excel(path, sheet_name=xl.sheet_names[0])
 
     def _split_device(col):
-        """'hostname swpXsY' → (hostname, swpXsY)"""
         parts = df[col].str.rsplit(' ', n=1, expand=True)
         return parts[0].str.strip(), parts[1].str.strip()
 
     df['Hostname'],   df['Interface']   = _split_device('DeviceA')
     df['Z Hostname'], df['Z Interface'] = _split_device('DeviceB')
 
-    # L/R: last character of DeviceA/B Physical Port ('2L' → 'L')
     def _lr(col):
         return df[col].apply(
             lambda v: str(v).strip()[-1] if pd.notna(v) and str(v).strip() else '')
@@ -282,7 +255,6 @@ def load_cutsheet(path):
     df['L/R']   = _lr('DeviceA Physical Port')
     df['Z L/R'] = _lr('DeviceB Physical Port')
 
-    # Rack / Elevation: extracted from 'Rack NNNN UN'
     def _rack(col):
         return (df[col].str.extract(r'Rack\s+(\d+)')[0]
                 .astype(float).fillna(0).astype(int))
@@ -299,38 +271,30 @@ def load_cutsheet(path):
     return df
 
 
+def load_cutsheet(path):
+    """Load cutsheet — identical to GFAB reference when Installation Sheet exists."""
+    try:
+        return pd.read_excel(path, sheet_name='Installation Sheet')
+    except ValueError:
+        return _load_cutsheet_deviceab(path)
+
+
 def build_cutsheet_lookup(cut_df):
     """Key: (Hostname, Interface) → row dict for Source_port etc.
 
     Adapts to schema changes: only carries forward the fill columns that
     actually exist in the cutsheet. DMARC1/DMARC2 were dropped in later
     cutsheet revisions; the lookup still works without them.
-
-    Indexes each row by *both* ends of the link:
-      • DeviceA  → (Hostname, Interface)          — standard Slack / T0-side rows
-      • DeviceB  → (Z Hostname, Z Interface)        — T1-side rows such as the
-        optics-only ``t1_t0_optics_rx_tx`` report, where Hostname is the T1 device
-        but Source_port / DMARC1 / DMARC2 / Destination_port still come from
-        columns C–F on the same allconnections row.
     """
     candidate_cols = ['Source_port', 'DMARC1', 'DMARC2', 'Destination_port']
     fill_cols = [c for c in candidate_cols if c in cut_df.columns]
     lookup = {}
     for _, row in cut_df.iterrows():
-        vals = {c: row[c] for c in fill_cols}
-        a_key = (
+        key = (
             str(row['Hostname']).strip(),
             str(row['Interface']).strip(),
         )
-        if a_key[0] and a_key[1]:
-            lookup[a_key] = vals
-        if 'Z Hostname' in row.index and 'Z Interface' in row.index:
-            b_key = (
-                str(row['Z Hostname']).strip(),
-                str(row['Z Interface']).strip(),
-            )
-            if b_key[0] and b_key[1]:
-                lookup[b_key] = vals
+        lookup[key] = {c: row[c] for c in fill_cols}
     # Stash which columns were actually available so step 6 can use the same set
     lookup['__fill_cols__'] = fill_cols
     return lookup
@@ -350,6 +314,47 @@ def build_z_lookup(cut_df):
     return lookup
 
 
+def remap_optics_interface_by_channel(df):
+    """Remap optic-lane interface suffixes from the Channel value.
+
+    Some optics exports use fine-grained lane labels (s0–s3). When s2/s3 are
+    present, the s0/s1 labels are unreliable too, so EVERY interface suffix is
+    rewritten purely from its Channel value to match the cutsheet (which only
+    defines s0/s1, each covering four channels):
+        Channel 1-4 → s0
+        Channel 5-8 → s1
+    This only activates when at least one s2 or s3 interface is present; files
+    that only ever use s0/s1 are left untouched. Returns rows changed.
+    """
+    if 'Interface' not in df.columns or 'Channel' not in df.columns:
+        return 0
+    # Only activate when fine-grained labels are present.
+    has_s2s3 = df['Interface'].astype(str).str.contains(r's[23]$', regex=True).any()
+    if not has_s2s3:
+        return 0
+    changed = 0
+    for i in df.index:
+        iface = str(df.at[i, 'Interface'])
+        m = re.search(r's([0-3])$', iface)
+        if not m:
+            continue
+        try:
+            ch = int(float(df.at[i, 'Channel']))
+        except (ValueError, TypeError):
+            continue
+        if 1 <= ch <= 4:
+            new_suffix = 's0'
+        elif 5 <= ch <= 8:
+            new_suffix = 's1'
+        else:
+            continue
+        new_iface = iface[:m.start()] + new_suffix
+        if new_iface != iface:
+            df.at[i, 'Interface'] = new_iface
+            changed += 1
+    return changed
+
+
 def paired_subport(iface):
     """Return the paired sub-port interface name.
 
@@ -364,9 +369,540 @@ def paired_subport(iface):
     return None
 
 
+def enforce_block_order(ws, block, anchor_after='Elevation'):
+    """Force `block` columns to appear contiguously, in the given order,
+    immediately after the `anchor_after` column.
+
+    Handles the new input format where some of these columns (e.g.
+    Source_port / Destination_port) already exist out of order: those
+    pre-existing columns are repositioned rather than left in place.
+    Values, cell styles and column widths are preserved. Columns not
+    present are skipped, so this is a no-op on the old format where the
+    block was already inserted in order.
+    """
+    from copy import copy as _copy
+    header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
+    present = [c for c in block if c in header]
+    if len(present) < 2 or anchor_after not in header:
+        return
+    # Already correct? (contiguous, in order, right after anchor) → skip.
+    a = header.index(anchor_after)
+    if header[a + 1:a + 1 + len(present)] == present:
+        return
+
+    # Snapshot every column: per-cell (value, style) + width.
+    cols = []
+    for c in range(1, ws.max_column + 1):
+        cells = [(ws.cell(row=r, column=c).value, _copy(ws.cell(row=r, column=c)._style))
+                 for r in range(1, ws.max_row + 1)]
+        cols.append({'name': ws.cell(row=1, column=c).value,
+                     'cells': cells,
+                     'width': ws.column_dimensions[get_column_letter(c)].width})
+
+    rest       = [d for d in cols if d['name'] not in present]
+    block_cols = [next(d for d in cols if d['name'] == b)
+                  for b in block if b in present]
+    out, inserted = [], False
+    for d in rest:
+        out.append(d)
+        if d['name'] == anchor_after:
+            out.extend(block_cols)
+            inserted = True
+    if not inserted:
+        out.extend(block_cols)
+
+    for ci, d in enumerate(out, start=1):
+        for ri, (val, style) in enumerate(d['cells'], start=1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell._style = style
+        if d['width']:
+            ws.column_dimensions[get_column_letter(ci)].width = d['width']
+
+
+# ── Integrated ("long") format support ──────────────────────────────────────
+# A newer source report exports an already-enriched, normalized layout where
+# every issue tab shares one schema:
+#   Category, Metric, Direction, T0 Host, T0 Interface, T1 Host, T1 Interface,
+#   Rack, Z Rack, Sources, Source Directions, Values, Source_port,
+#   Destination_port, Details
+# There's no lldp_sp / combined_fec / Measured (dBm) here, and Source_port /
+# Destination_port are pre-populated — so the cutsheet-matching pipeline used
+# for the old format has nothing to bind to. These files get their own handler.
+#
+# Tab mapping requested:
+#   interfaces_sp                              -> Downlinks
+#   optics_rx_tx_threshold + optics_temp       -> Optics
+#   fec_bin_issues + pre_fec_ber_threshold     -> Fec Errors
+#   all_issues, source_audit                   -> dropped
+
+INTEGRATED_OUTPUT = [
+    ('Downlinks',  ['interfaces_sp']),
+    ('Optics',     ['optics_rx_tx_threshold', 'optics_temp']),
+    ('Fec Errors', ['fec_bin_issues', 'pre_fec_ber_threshold']),
+]
+
+# Integrated columns to keep per output tab (before cutsheet enrichment is
+# appended). Host / Interface are created by coalescing the T0/T1 ends.
+INTEGRATED_KEEP = {
+    'Downlinks':  ['Direction', 'Metric', 'Host', 'Interface'],
+    'Optics':     ['Direction', 'Metric', 'Values', 'Host', 'Interface'],
+    'Fec Errors': ['Direction', 'Metric', 'Host', 'Interface'],
+}
+
+# Cutsheet fields appended to every tab (oriented so the matched Host/Interface
+# is the local end), in this order, right after Interface.
+ENRICH_COLS = ['L/R', 'Rack', 'Elevation',
+               'Source_port', 'DMARC1', 'DMARC2', 'Destination_port',
+               'Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation']
+
+
+def is_integrated_format(input_path):
+    """True when the input is the new normalized/integrated export.
+
+    Detection: no old-format lldp/combined_fec tab is present AND an issue tab
+    carries the integrated schema (T0 Host + T1 Host columns).
+    """
+    try:
+        names = pd.ExcelFile(input_path).sheet_names
+    except Exception:
+        return False
+    if any(a in names for a in TAB_ALIASES['lldp']):
+        return False
+    if any(a in names for a in TAB_ALIASES['combined_fec']):
+        return False
+    for t in ('all_issues', 'optics_rx_tx_threshold', 'interfaces_sp',
+              'fec_bin_issues', 'pre_fec_ber_threshold'):
+        if t in names:
+            try:
+                hdr = pd.read_excel(input_path, sheet_name=t, nrows=0).columns.tolist()
+            except Exception:
+                continue
+            if 'T0 Host' in hdr and 'T1 Host' in hdr:
+                return True
+    return False
+
+
+def _canon_link_keys(ws):
+    """Set of orientation-independent endpoint-pair keys for a worksheet."""
+    hdr = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
+    idx = {h: i + 1 for i, h in enumerate(hdr)}
+    keys = set()
+    if 'Host' not in idx or 'Interface' not in idx:
+        return keys, idx
+    for r in range(2, ws.max_row + 1):
+        def g(name):
+            if name not in idx:
+                return ''
+            v = ws.cell(row=r, column=idx[name]).value
+            return '' if v is None else str(v).strip()
+        keys.add(tuple(sorted([(g('Host'), g('Interface')),
+                               (g('Z Hostname'), g('Z Interface'))])))
+    return keys, idx
+
+
+def grey_rows_matching(wb, target_tab, source_tab, log):
+    """Light-grey the font of every row in target_tab whose link (orientation-
+    independent endpoint pair) also appears in source_tab."""
+    if target_tab not in wb.sheetnames or source_tab not in wb.sheetnames:
+        return
+    GREY = 'FFD3D3D3'
+    src_keys, _ = _canon_link_keys(wb[source_tab])
+    if not src_keys:
+        log(f"  · Greyed 0 {target_tab} row(s) also present in {source_tab}")
+        return
+    ws = wb[target_tab]
+    _, idx = _canon_link_keys(ws)
+    if 'Host' not in idx:
+        return
+    cnt = 0
+    for r in range(2, ws.max_row + 1):
+        def g(name):
+            if name not in idx:
+                return ''
+            v = ws.cell(row=r, column=idx[name]).value
+            return '' if v is None else str(v).strip()
+        key = tuple(sorted([(g('Host'), g('Interface')),
+                            (g('Z Hostname'), g('Z Interface'))]))
+        if key in src_keys:
+            cnt += 1
+            for c in range(1, ws.max_column + 1):
+                cell = ws.cell(row=r, column=c)
+                f = cell.font
+                cell.font = Font(bold=f.bold if f else False,
+                                 name=(f.name if f else None) or 'Arial',
+                                 size=(f.size if f else None) or 10,
+                                 color=GREY)
+    log(f"  · Greyed {cnt} {target_tab} row(s) also present in {source_tab}")
+
+
+def _dedup_integrated(df, out_name, log):
+    """Remove duplicate rows for Optics / Fec Errors using an orientation-
+    independent link key, so a row enriched via the Z-side (flipped) collapses
+    with the same physical link seen in the normal direction.
+
+    The canonical link key is the *unordered* pair of endpoints
+    {(Host, Interface), (Z Hostname, Z Interface)} — identical for a link and
+    its reciprocal.
+
+    Optics     : one row per canonical link, keeping the highest 'Values'.
+    Fec Errors : one row per (Metric, canonical link), keep first — so the
+                 same link reported as both fec_bin and pre_fec_ber is kept,
+                 but a true reciprocal duplicate of the same metric is dropped.
+    """
+    if out_name not in ('Optics', 'Fec Errors') or df.empty:
+        return df
+
+    def col(name):
+        return (df[name].astype(str).str.strip()
+                if name in df.columns else pd.Series([''] * len(df), index=df.index))
+
+    h, i  = col('Host'), col('Interface')
+    zh, zi = col('Z Hostname'), col('Z Interface')
+    canon = [tuple(sorted([(str(a), str(b)), (str(c), str(d))]))
+             for a, b, c, d in zip(h, i, zh, zi)]
+
+    n0 = len(df)
+    df = df.copy()
+    if out_name == 'Optics':
+        def _num(v):
+            try:
+                return float(str(v).split(':')[-1].strip())
+            except (ValueError, AttributeError):
+                return float('-inf')
+        df['__k'] = canon
+        df['__v'] = df['Values'].map(_num) if 'Values' in df.columns else 0
+        df['__o'] = range(len(df))
+        df = (df.sort_values('__v', ascending=False)
+                .drop_duplicates('__k', keep='first')
+                .sort_values('__o')
+                .drop(columns=['__k', '__v', '__o'])
+                .reset_index(drop=True))
+    else:  # Fec Errors
+        metric = col('Metric')
+        df['__k'] = [(m,) + c for m, c in zip(metric, canon)]
+        df = df.drop_duplicates('__k', keep='first').drop(columns='__k').reset_index(drop=True)
+
+    removed = n0 - len(df)
+    if removed:
+        log(f"    · Removed {removed} duplicate row(s) from {out_name}")
+    return df
+
+
+def build_oriented_lookup(cut_df):
+    """(host, interface) → cutsheet fields oriented so the matched end is local.
+
+    The cutsheet is one-directional (A-side = T0 via Hostname/Interface,
+    Z-side = T1 via Z Hostname/Z Interface). To let a single Host/Interface
+    match either end, every cutsheet row produces two keyed entries:
+
+      • A-side key → fields as-is (local = A/T0).
+      • Z-side key → fields flipped (local = Z/T1): local L/R/Rack/Elevation
+        come from the Z columns, Source_port/Destination_port and DMARC1/DMARC2
+        are swapped, and the Z* output columns describe the A-side far end.
+    """
+    def v(r, c):
+        x = r[c] if c in r else None
+        return None if (isinstance(x, float) and pd.isna(x)) else x
+
+    L = {}
+    for _, r in cut_df.iterrows():
+        L[(str(r['Hostname']).strip(), str(r['Interface']).strip())] = {
+            'L/R': v(r, 'L/R'), 'Rack': v(r, 'Rack'), 'Elevation': v(r, 'Elevation'),
+            'Source_port': v(r, 'Source_port'), 'DMARC1': v(r, 'DMARC1'),
+            'DMARC2': v(r, 'DMARC2'), 'Destination_port': v(r, 'Destination_port'),
+            'Z Hostname': v(r, 'Z Hostname'), 'Z Interface': v(r, 'Z Interface'),
+            'Z L/R': v(r, 'Z L/R'), 'Z Rack': v(r, 'Z Rack'), 'Z Elevation': v(r, 'Z Elevation'),
+        }
+        L[(str(r['Z Hostname']).strip(), str(r['Z Interface']).strip())] = {
+            'L/R': v(r, 'Z L/R'), 'Rack': v(r, 'Z Rack'), 'Elevation': v(r, 'Z Elevation'),
+            'Source_port': v(r, 'Destination_port'), 'DMARC1': v(r, 'DMARC2'),
+            'DMARC2': v(r, 'DMARC1'), 'Destination_port': v(r, 'Source_port'),
+            'Z Hostname': v(r, 'Hostname'), 'Z Interface': v(r, 'Interface'),
+            'Z L/R': v(r, 'L/R'), 'Z Rack': v(r, 'Rack'), 'Z Elevation': v(r, 'Elevation'),
+        }
+    return L
+
+
+def enrich_full_by_host(df, cut_df, log):
+    """Append ENRICH_COLS to df, matching (Host, Interface) against the cutsheet
+    (either end), with s0↔s1 / s2↔s3 paired-subport fallback."""
+    if cut_df is None or 'Host' not in df.columns or 'Interface' not in df.columns:
+        return df
+    L = build_oriented_lookup(cut_df)
+    df = df.copy()
+    for c in ENRICH_COLS:
+        df[c] = None
+    hits = 0
+    for i in df.index:
+        h  = '' if df.at[i, 'Host'] is None else str(df.at[i, 'Host']).strip()
+        it = '' if df.at[i, 'Interface'] is None else str(df.at[i, 'Interface']).strip()
+        if not h or not it or h.lower() == 'nan' or it.lower() == 'nan':
+            continue
+        m = L.get((h, it))
+        if m is None:
+            mate = paired_subport(it)
+            if mate:
+                m = L.get((h, mate))
+        if m is None:
+            continue
+        hits += 1
+        for c in ENRICH_COLS:
+            df.at[i, c] = m[c]
+    log(f"    · Enriched {hits}/{len(df)} row(s) from cutsheet by Host/Interface")
+    return df
+
+
+def process_integrated_file(input_path, output_path, cut_df, log):
+    """Build a formatted workbook from the new integrated-format input."""
+    available = set(pd.ExcelFile(input_path).sheet_names)
+
+    # Build a clean workbook — we emit only the mapped tabs + Summary.
+    from openpyxl import Workbook
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # Capture rack counts per tab BEFORE columns are dropped, so the Summary
+    # tab and the rack-based filename still work after 'Rack' is removed.
+    rack_by_tab = {}
+
+    for out_name, src_tabs in INTEGRATED_OUTPUT:
+        frames = []
+        used   = []
+        for src in src_tabs:
+            if src not in available:
+                continue
+            # Rack / Z Rack are zero-padded 4-digit text (e.g. '0810'); read
+            # them as strings so pandas doesn't coerce to int and drop padding.
+            df = pd.read_excel(input_path, sheet_name=src,
+                               dtype={'Rack': str, 'Z Rack': str})
+            if not df.empty:
+                frames.append(df)
+            used.append(src)
+        if not frames:
+            if used:
+                log(f"  · {out_name}: source tab(s) {', '.join(used)} present but empty — skipped")
+            else:
+                log(f"  · {out_name}: no source tab found — skipped")
+            continue
+        combined = pd.concat(frames, ignore_index=True, sort=False)
+
+        # Per-row: keep only the source-end host/interface for the Direction.
+        #   T0 -> T1  → blank T1 Host / T1 Interface
+        #   T1 -> T0  → blank T0 Host / T0 Interface
+        if 'Direction' in combined.columns:
+            for i in combined.index:
+                d = str(combined.at[i, 'Direction']).strip()
+                if d == 'T0 -> T1':
+                    blanks = ('T1 Host', 'T1 Interface')
+                elif d == 'T1 -> T0':
+                    blanks = ('T0 Host', 'T0 Interface')
+                else:
+                    continue
+                for c in blanks:
+                    if c in combined.columns:
+                        combined.at[i, c] = None
+
+        # Collapse T0/T1 Host & Interface into single Host / Interface columns.
+        host_cols = ['T0 Host', 'T1 Host']
+        int_cols  = ['T0 Interface', 'T1 Interface']
+        present   = [c for c in host_cols + int_cols if c in combined.columns]
+        if present:
+            def _coalesce(row, cols):
+                for c in cols:
+                    if c in combined.columns:
+                        v = row.get(c)
+                        if v is not None and not (isinstance(v, float) and pd.isna(v)) \
+                                and str(v).strip() != '':
+                            return v
+                return None
+            host_s = combined.apply(lambda r: _coalesce(r, host_cols), axis=1)
+            int_s  = combined.apply(lambda r: _coalesce(r, int_cols), axis=1)
+            anchor = min(list(combined.columns).index(c) for c in present)
+            combined = combined.drop(columns=present)
+            anchor = min(anchor, len(combined.columns))
+            combined.insert(anchor, 'Host', host_s.values)
+            combined.insert(anchor + 1, 'Interface', int_s.values)
+
+        # Snapshot rack values (Rack + Z Rack) from the integrated columns
+        # BEFORE trimming, so the Summary tab + filename still work.
+        racks = {'Rack': [], 'Z Rack': []}
+        for col in ('Rack', 'Z Rack'):
+            if col in combined.columns:
+                racks[col] = [str(v).strip() for v in combined[col].dropna()
+                              if str(v).strip() != '']
+        rack_by_tab[out_name] = racks
+
+        # Keep only the wanted integrated columns, then append the full
+        # cutsheet enrichment (matched by Host/Interface).
+        keep = [c for c in INTEGRATED_KEEP.get(out_name, []) if c in combined.columns]
+        combined = combined[keep]
+        combined = enrich_full_by_host(combined, cut_df, log)
+        combined = _dedup_integrated(combined, out_name, log)
+
+        # Sort by Direction ascending (stable), so T0 -> T1 rows precede T1 -> T0.
+        if 'Direction' in combined.columns:
+            combined = (combined.sort_values('Direction', kind='stable')
+                                .reset_index(drop=True))
+
+        log(f"  · {out_name} ← {' + '.join(used)} ({len(combined)} row(s))")
+        write_sheet(wb, out_name, combined)
+
+    if not wb.sheetnames:
+        raise RuntimeError("No mapped source tabs found in integrated input.")
+
+    # ── Standard formatting (mirrors the old-format path) ───────────────────
+    log("  · Removing fills and applying borders")
+    for sheet_name in wb.sheetnames:
+        clear_and_border(wb[sheet_name])
+
+    log("  · Aligning all cells to middle-centre")
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=False)
+    for sheet_name in wb.sheetnames:
+        for row in wb[sheet_name].iter_rows():
+            for cell in row:
+                cell.alignment = center_align
+
+    log("  · Adding NOTE column and filters to all tabs")
+    no_fill     = PatternFill(fill_type=None)
+    yellow_fill = PatternFill('solid', start_color=YELLOW)
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        col_idx = ws.max_column + 1
+        hdr = ws.cell(row=1, column=col_idx, value='NOTE')
+        hdr.font      = Font(bold=True, name='Arial', size=10)
+        hdr.alignment = center_align
+        hdr.fill      = yellow_fill
+        hdr.border    = thin_border()
+        ws.column_dimensions[get_column_letter(col_idx)].width = 16
+        for r in range(2, ws.max_row + 1):
+            cell = ws.cell(row=r, column=col_idx)
+            cell.fill   = no_fill
+            cell.border = thin_border()
+        if ws.max_row > 1 and ws.max_column > 0:
+            ws.auto_filter.ref = ws.dimensions
+
+    # Grey-font Optics rows present in Downlinks, then Fec Errors rows present
+    # in Optics (orientation-independent link match).
+    grey_rows_matching(wb, 'Optics', 'Downlinks', log)
+    grey_rows_matching(wb, 'Fec Errors', 'Optics', log)
+
+    log("  · Expanding all columns and rows")
+    for sheet_name in wb.sheetnames:
+        autofit_sheet(wb[sheet_name])
+
+    # ── Summary tab (per Rack breakdown; Rack kept as text e.g. '0810') ─────
+    log("  · Creating Summary tab")
+    center_s      = center_align
+    bd_s          = thin_border()
+    no_fill_s     = PatternFill(fill_type=None)
+    yellow_fill_s = PatternFill('solid', start_color=YELLOW)
+
+    def _s(cell, value, bold=False, header=False):
+        cell.value     = value
+        cell.font      = Font(bold=bold, name='Arial', size=10)
+        cell.alignment = center_s
+        cell.border    = bd_s
+        cell.fill      = yellow_fill_s if header else no_fill_s
+
+    tab_rack  = {}
+    all_racks = set()
+    for sname in wb.sheetnames:
+        counts = {}
+        for k in rack_by_tab.get(sname, {}).get('Rack', []):
+            counts[k] = counts.get(k, 0) + 1
+            all_racks.add(k)
+        tab_rack[sname] = counts
+
+    racks      = sorted(all_racks)
+    tabs_order = list(wb.sheetnames)
+    total_cols = 1 + len(racks) + 1
+
+    wb.create_sheet('Summary', 0)
+    ws_s = wb['Summary']
+    ws_s.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(total_cols, 1))
+    title_c = ws_s.cell(row=1, column=1, value='Tab Summary by Rack')
+    title_c.font = Font(bold=True, name='Arial', size=13)
+    title_c.alignment = center_s
+    title_c.border    = bd_s
+    title_c.fill      = yellow_fill_s
+    ws_s.row_dimensions[1].height = 28
+
+    _s(ws_s.cell(row=2, column=1), 'Tab Name', bold=True, header=True)
+    for c, rack in enumerate(racks, start=2):
+        _s(ws_s.cell(row=2, column=c), str(rack), bold=True, header=True)
+    _s(ws_s.cell(row=2, column=total_cols), 'Total', bold=True, header=True)
+
+    rack_totals = {r: 0 for r in racks}
+    data_tabs   = [n for n in tabs_order if n.lower() != 'summary']
+    for i, tab_name in enumerate(data_tabs, start=3):
+        _s(ws_s.cell(row=i, column=1), tab_name)
+        row_total = 0
+        for c, rack in enumerate(racks, start=2):
+            count = tab_rack.get(tab_name, {}).get(rack, 0)
+            _s(ws_s.cell(row=i, column=c), count if count > 0 else '')
+            rack_totals[rack] += count
+            row_total += count
+        _s(ws_s.cell(row=i, column=total_cols), row_total, bold=True)
+
+    tot_r = 3 + len(data_tabs)
+    _s(ws_s.cell(row=tot_r, column=1), 'TOTAL', bold=True)
+    grand = 0
+    for c, rack in enumerate(racks, start=2):
+        _s(ws_s.cell(row=tot_r, column=c), rack_totals[rack], bold=True)
+        grand += rack_totals[rack]
+    _s(ws_s.cell(row=tot_r, column=total_cols), grand, bold=True)
+
+    ws_s.column_dimensions['A'].width = 20
+    for c in range(2, total_cols + 1):
+        ws_s.column_dimensions[get_column_letter(c)].width = 14
+
+    # Order: Summary, Downlinks, Optics, Fec Errors
+    desired  = ['Summary', 'Downlinks', 'Optics', 'Fec Errors']
+    ordered  = [n for n in desired if n in wb.sheetnames]
+    leftover = [n for n in wb.sheetnames if n not in desired]
+    wb._sheets = [wb[n] for n in ordered + leftover]
+
+    wb.save(output_path)
+
+    # ── Rename by top-2 Rack numbers (kept as text) ─────────────────────────
+    # In this format the 'Rack' column is the source-side rack and flips with
+    # Direction, so it isn't a reliable identifier on its own. The racks being
+    # audited are the T1/T2-tier switches (4-digit, >= 1000; T0 racks are 0xxx
+    # i.e. < 1000). Gather both Rack and Z Rack, prefer the T1/T2 racks, and
+    # fall back to all racks only if none qualify.
+    try:
+        rack_vals = []
+        for racks in rack_by_tab.values():
+            rack_vals += racks.get('Rack', [])
+            rack_vals += racks.get('Z Rack', [])
+        high = [v for v in rack_vals if v.isdigit() and int(v) >= 1000]
+        pool = high if high else rack_vals
+        if pool:
+            top2     = [r for r, _ in Counter(pool).most_common(2)]
+            new_name = '+'.join(top2) + '.xlsx'
+            new_path = os.path.join(os.path.dirname(output_path), new_name)
+            load_workbook(output_path).save(new_path)
+            if new_path != output_path:
+                os.remove(output_path)
+            log(f"  ✓ Saved → {new_name}")
+            return new_path
+    except Exception as e:
+        log(f"  ⚠ Could not rename by Rack: {e}")
+
+    log(f"  ✓ Saved → {os.path.basename(output_path)}")
+    return output_path
+
+
 # ── Core processor ───────────────────────────────────────────────────────────
 
 def process_file(input_path, output_path, cut_df, log):
+    # Route the new normalized/integrated export to its own handler; the
+    # old-format pipeline below is left exactly as-is.
+    if is_integrated_format(input_path):
+        log("  · Detected integrated format — using integrated handler")
+        shutil.copy2(input_path, output_path)
+        return process_integrated_file(input_path, output_path, cut_df, log)
+
     shutil.copy2(input_path, output_path)
     wb = load_workbook(output_path)
 
@@ -385,18 +921,11 @@ def process_file(input_path, output_path, cut_df, log):
         # columns and order them right after Elevation. Source_port and
         # Destination_port will be inserted between Elevation and Expected*
         # by step 6, giving the final order:
-        #   Act. Hostname, Act. Interface, Act. Rack, Act. Elevation,
+        #   Hostname, Interface, Rack, Elevation,
         #   Source_port, Destination_port,
         #   Expected Hostname, Exp. Interface, Exp. Rack, Exp. Elevation
         drop = ['Active Host', 'Act. Interface', 'Act. Rack', 'Act. Elevation']
         down_df.drop(columns=[c for c in drop if c in down_df.columns], inplace=True)
-        # Rename A-side columns to Act. prefix (v2)
-        down_df.rename(columns={
-            'Hostname':  'Act. Hostname',
-            'Interface': 'Act. Interface',
-            'Rack':      'Act. Rack',
-            'Elevation': 'Act. Elevation',
-        }, inplace=True)
         # Pull Expected* to the end (relative order preserved) so they sit
         # after Elevation in the written sheet.
         exp_cols = ['Expected Hostname', 'Exp. Interface', 'Exp. Rack', 'Exp. Elevation']
@@ -406,20 +935,8 @@ def process_file(input_path, output_path, cut_df, log):
             down_df = down_df[rest + present_exp]
         del wb[lldp_tab]
         write_sheet(wb, 'Downlinks', down_df)
-        # Rename A-side columns in Mismatches too before writing (v2).
-        # Drop the source report's Active-side columns first to avoid duplicate
-        # column names (the source tab already has Act. Interface etc).
-        mis_write_df = mis_orig_df.copy()
-        act_src_drop = ['Active Host', 'Act. Interface', 'Act. Rack', 'Act. Elevation']
-        mis_write_df.drop(columns=[c for c in act_src_drop if c in mis_write_df.columns],
-                          inplace=True)
-        mis_write_df.rename(columns={
-            'Hostname':  'Act. Hostname',
-            'Interface': 'Act. Interface',
-            'Rack':      'Act. Rack',
-            'Elevation': 'Act. Elevation',
-        }, inplace=True)
-        write_sheet(wb, 'Mismatches', mis_write_df)
+        write_sheet(wb, 'Mismatches', mis_orig_df.drop(
+            columns=[c for c in [] if c in mis_orig_df.columns]))  # keep all cols for now
 
     # ── 2. Optics tab ───────────────────────────────────────────────────────
     optics_src = find_tab(wb, 'optics')
@@ -428,11 +945,19 @@ def process_file(input_path, output_path, cut_df, log):
         # Extra cols introduced by the *_with_pp variant — drop them too.
         drop_cols = {'Transceiver', 'Channel',
                      'Min Threshold (dBm)', 'Max Threshold (dBm)',
-                     'PP_A', 'PP_Z', 'PP Info', 'Z_end_host', 'Z_end_intf',
+                     'PP_A', 'PP_Z', 'Z_end_host', 'Z_end_intf',
                      'rack_z', 'Z_Rack', 'Z_Elevation', 'Index',
-                     'Status', 'Placement Group'}
+                     'Status', 'Placement Group',
+                     'Breakout Source', 'Breakout Mode', 'Breakout Warning'}
         optics_df = pd.read_excel(input_path, sheet_name=optics_src)
-        optics_df = normalize_optics_source_df(optics_df)
+        # New-format inputs label optic lanes s0–s3, but the cutsheet only
+        # defines s0/s1. When s2/s3 are present the s0/s1 labels are also
+        # unreliable, so remap EVERY interface by Channel (1-4→s0, 5-8→s1) to
+        # match the cutsheet. Must run before 'Channel' is dropped.
+        n_remap = remap_optics_interface_by_channel(optics_df)
+        if n_remap:
+            log(f"    · Remapped {n_remap} optic interface(s) by Channel "
+                f"(1-4→s0, 5-8→s1)")
         optics_df.drop(columns=[c for c in drop_cols if c in optics_df.columns], inplace=True)
         # Put 'Metric' first, then 'Measured (dBm)', so both columns can be
         # frozen and stay visible while scrolling horizontally.
@@ -489,13 +1014,156 @@ def process_file(input_path, output_path, cut_df, log):
         else:
             log("    ⚠ Lock Status / Pre-FEC BER not found — leaving combined_fec as-is")
 
+    # ── 3c. Build T1 Optics / T1 combined_fec from the t1_t0_* source tabs ───
+    # These mirror the standard Optics / combined_fec tabs but describe the
+    # T1-side of each T1↔T0 link. T1 devices live on the *Z-side* of the
+    # cutsheet, so enrichment matches each row's (Hostname, Interface) against
+    # the cutsheet Z-side and flips orientation: the local (T1) end becomes
+    # Source_port / L/R and the remote (T0) end becomes the Z block — yielding
+    # exactly the same column layout as the standard tabs.
+    src_names = pd.ExcelFile(input_path).sheet_names
+    has_dmarc = 'DMARC1' in cut_df.columns and 'DMARC2' in cut_df.columns
+
+    # Full-row cutsheet lookups for BOTH orientations. The standard tabs only
+    # ever match the A-side; T1 devices normally live on the Z-side, but we
+    # match either side so enrichment never depends on which way a link was
+    # catalogued. z_lookup (A-side keyed by Z Hostname/Interface) is built at
+    # the top of process_file; build the A-side keyed lookup here to match it.
+    a_lookup = {}
+    for _, _row in cut_df.iterrows():
+        a_lookup[(str(_row['Hostname']).strip(),
+                  str(_row['Interface']).strip())] = _row
+
+    def _link_enrich_row(host, iface):
+        """Orientation-independent enrichment, always presenting the LOCAL
+        (T1) end as the source.
+
+        Match (host, iface) against the cutsheet on the Z-side first, then the
+        A-side, with a paired sub-port (s0↔s1, s2↔s3) fallback on each. When
+        the match lands on the Z-side, flip the row so the local end's patch
+        becomes Source_port and the far (A-side) end becomes the Z block. When
+        it lands on the A-side, the local end is already the source, so the
+        cutsheet fields are used as-is. Either way the local end reads as the
+        source — i.e. the layout is independent of how the link was stored.
+        """
+        flip = True
+        m = z_lookup.get((host, iface))
+        if m is None:
+            mate = paired_subport(iface)
+            if mate:
+                m = z_lookup.get((host, mate))
+        if m is None:                       # not on the Z-side — try A-side
+            flip = False
+            m = a_lookup.get((host, iface))
+            if m is None:
+                mate = paired_subport(iface)
+                if mate:
+                    m = a_lookup.get((host, mate))
+
+        out = {k: None for k in
+               ['L/R', 'Rack', 'Elevation',
+                'Source_port', 'DMARC1', 'DMARC2', 'Destination_port',
+                'Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation']}
+        if m is None:
+            return out
+
+        def g(col):
+            v = m.get(col)
+            return None if (v is None or (isinstance(v, float) and pd.isna(v))) else v
+
+        if flip:
+            # Local matched the cutsheet Z-side: flip so local end = source,
+            # far (cutsheet A-side) end = Z block.
+            out['L/R']              = g('Z L/R')
+            out['Rack']             = g('Z Rack')
+            out['Elevation']        = g('Z Elevation')
+            out['Source_port']      = g('Destination_port')
+            out['Destination_port'] = g('Source_port')
+            if has_dmarc:
+                out['DMARC1'] = g('DMARC2')
+                out['DMARC2'] = g('DMARC1')
+            out['Z Hostname']  = g('Hostname')
+            out['Z Interface'] = g('Interface')
+            out['Z L/R']       = g('L/R')
+            out['Z Rack']      = g('Rack')
+            out['Z Elevation'] = g('Elevation')
+        else:
+            # Local matched the cutsheet A-side: already the source end.
+            out['L/R']              = g('L/R')
+            out['Rack']             = g('Rack')
+            out['Elevation']        = g('Elevation')
+            out['Source_port']      = g('Source_port')
+            out['Destination_port'] = g('Destination_port')
+            if has_dmarc:
+                out['DMARC1'] = g('DMARC1')
+                out['DMARC2'] = g('DMARC2')
+            out['Z Hostname']  = g('Z Hostname')
+            out['Z Interface'] = g('Z Interface')
+            out['Z L/R']       = g('Z L/R')
+            out['Z Rack']      = g('Z Rack')
+            out['Z Elevation'] = g('Z Elevation')
+        return out
+
+    def _build_t1(src_tab, out_name, leading):
+        if src_tab not in src_names:
+            return
+        sdf = pd.read_excel(input_path, sheet_name=src_tab)
+        if not all(c in sdf.columns for c in ('Hostname', 'Interface')):
+            return
+        log(f"  · Building {out_name} from {src_tab}")
+        recs = []
+        for _, srow in sdf.iterrows():
+            host  = str(srow.get('Hostname', '') or '').strip()
+            iface = str(srow.get('Interface', '') or '').strip()
+            enr = _link_enrich_row(host, iface)
+            # Local Rack/Elevation come from the cutsheet (oriented to the
+            # local end); the t1_t0 report's own Rack/Elevation describe the
+            # far T0 end, so only fall back to them when the cutsheet misses.
+            rec = {
+                'Hostname':  srow.get('Hostname'),
+                'Interface': srow.get('Interface'),
+                'Rack':      enr['Rack'] if enr['Rack'] is not None else srow.get('Rack'),
+                'Elevation': enr['Elevation'] if enr['Elevation'] is not None else srow.get('Elevation'),
+            }
+            for c in leading:
+                rec[c] = srow.get(c)
+            enr.pop('Rack', None)
+            enr.pop('Elevation', None)
+            rec.update(enr)
+            recs.append(rec)
+
+        port_cols = (['Source_port']
+                     + (['DMARC1', 'DMARC2'] if has_dmarc else [])
+                     + ['Destination_port'])
+        col_order = (list(leading)
+                     + ['Hostname', 'Interface', 'L/R', 'Rack', 'Elevation']
+                     + port_cols
+                     + ['Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation'])
+        out_df = pd.DataFrame(recs)
+        if 'Measured (dBm)' in out_df.columns:
+            out_df['Measured (dBm)'] = pd.to_numeric(out_df['Measured (dBm)'],
+                                                     errors='coerce')
+        out_df = out_df.reindex(columns=col_order)
+        write_sheet(wb, out_name, out_df)
+        # Freeze row 1 + the leading columns (Metric, Measured (dBm)) like Optics.
+        if leading:
+            wb[out_name].freeze_panes = 'C2' if len(leading) >= 2 else 'B2'
+
+    _build_t1('t1_t0_optics_rx_tx', 'T1 Optics', ['Metric', 'Measured (dBm)'])
+    _build_t1('t1_t0_combined_fec', 'T1 combined_fec', [])
+
+    # Drop the raw t1_t0_* source tabs (consumed above / unused link_ports).
+    for t in ('t1_t0_optics_rx_tx', 't1_t0_combined_fec', 't1_t0_link_ports'):
+        if t in wb.sheetnames:
+            del wb[t]
+
     # ── 4. Reorder tabs ─────────────────────────────────────────────────────
     # Put the four primary output tabs at the END in the documented order,
     # everything else stays in its current relative order. Rewriting _sheets
     # directly is simpler and more robust than chained move_sheet() calls
     # whose offset arithmetic depended on the count of intermediate tabs.
-    # cannot_decode_sp sits between Summary and Downlinks in the target layout
-    desired  = ['Downlinks', 'Mismatches', 'Optics', 'combined_fec', 'cannot_decode_sp']
+    desired  = ['Downlinks', 'Mismatches', 'Optics', 'combined_fec',
+                'T1 Optics', 'T1 combined_fec']
     existing = [s for s in desired if s in wb.sheetnames]
     others   = [s for s in wb.sheetnames if s not in desired]
     wb._sheets = [wb[n] for n in others + existing]
@@ -515,12 +1183,13 @@ def process_file(input_path, output_path, cut_df, log):
             lr_from_cut[z_iface] = z_lr
 
     lr_name_for = {
-        'Act. Interface': 'Act. L/R',
         'Interface':      'L/R',
         'Z Interface':    'Z L/R',
         'Exp. Interface': 'Exp. L/R',
     }
     for sheet_name in wb.sheetnames:
+        if sheet_name in T1_TABS:
+            continue          # already enriched with L/R in step 3c
         ws = wb[sheet_name]
         header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
         targets = [(i+1, h) for i, h in enumerate(header) if h in lr_name_for]
@@ -542,15 +1211,15 @@ def process_file(input_path, output_path, cut_df, log):
                                     ['Source_port', 'DMARC1', 'DMARC2', 'Destination_port'])
     log(f"  · Filling {', '.join(fill_cols) or '(no cutsheet fill cols available)'} (match on Hostname + Interface)")
     for sheet_name in wb.sheetnames:
+        if sheet_name in T1_TABS:
+            continue          # already enriched (Z-side) in step 3c
         ws = wb[sheet_name]
         header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
-        if not all(c in header for c in ['Act. Hostname', 'Act. Interface']) and \
-           not all(c in header for c in ['Hostname', 'Interface']):
+        if not all(c in header for c in ['Hostname', 'Interface']):
             continue
-        host_col = 'Act. Hostname' if 'Act. Hostname' in header else 'Hostname'
-        int_col  = 'Act. Interface' if 'Act. Interface' in header else 'Interface'
-        anchor_col = next((c for c in ['Act. Elevation', 'Elevation'] if c in header), None)
-        anchor = (header.index(anchor_col) + 1) if anchor_col else len(header)
+        # Append any fill columns this sheet doesn't already have, right after
+        # Elevation if present, otherwise at the end.
+        anchor = (header.index('Elevation') + 1) if 'Elevation' in header else len(header)
         insert_at = anchor + 1
         for col_name in fill_cols:
             if col_name in header:
@@ -562,8 +1231,7 @@ def process_file(input_path, output_path, cut_df, log):
             ws.column_dimensions[get_column_letter(insert_at)].width = max(len(col_name)+2, 14)
             insert_at += 1
         header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
-        host_c = header.index(host_col)+1
-        int_c  = header.index(int_col)+1
+        host_c, int_c = header.index('Hostname')+1, header.index('Interface')+1
         fill_idx = {c: header.index(c)+1 for c in fill_cols}
         for r in range(2, ws.max_row + 1):
             host  = str(ws.cell(row=r, column=host_c).value or '').strip()
@@ -574,6 +1242,10 @@ def process_file(input_path, output_path, cut_df, log):
                     val = match.get(col_name)
                     if val is not None and not (isinstance(val, float) and pd.isna(val)):
                         ws.cell(row=r, column=col_idx, value=val)
+
+        # Force canonical contiguous order right after Elevation, repositioning
+        # any of these that already existed in the input (new-format files).
+        enforce_block_order(ws, ['Source_port', 'DMARC1', 'DMARC2', 'Destination_port'])
 
     # ── 6c. Fill Z-side info in designated tabs (default: Optics) ───────────
     Z_COLS = ['Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation']
@@ -591,16 +1263,13 @@ def process_file(input_path, output_path, cut_df, log):
             ws_z = wb[tab]
             header = [ws_z.cell(row=1, column=c).value
                       for c in range(1, ws_z.max_column + 1)]
-            if not all(c in header for c in ['Act. Hostname', 'Act. Interface']) and \
-               not all(c in header for c in ['Hostname', 'Interface']):
+            if not all(c in header for c in ['Hostname', 'Interface']):
                 continue
             log(f"  · Filling Z-side info in {tab}: {', '.join(z_available)}")
             # Anchor: right after Destination_port if present, else after
-            # Act. Elevation / Elevation, else at the end of the sheet.
+            # Elevation, else at the end of the sheet.
             if 'Destination_port' in header:
                 anchor = header.index('Destination_port') + 1
-            elif 'Act. Elevation' in header:
-                anchor = header.index('Act. Elevation') + 1
             elif 'Elevation' in header:
                 anchor = header.index('Elevation') + 1
             else:
@@ -617,10 +1286,7 @@ def process_file(input_path, output_path, cut_df, log):
                 insert_at += 1
             header = [ws_z.cell(row=1, column=c).value
                       for c in range(1, ws_z.max_column + 1)]
-            z_host_col = 'Act. Hostname' if 'Act. Hostname' in header else 'Hostname'
-            z_int_col  = 'Act. Interface' if 'Act. Interface' in header else 'Interface'
-            host_c = header.index(z_host_col)+1
-            int_c  = header.index(z_int_col)+1
+            host_c, int_c = header.index('Hostname')+1, header.index('Interface')+1
             fill_idx = {c: header.index(c)+1 for c in z_available}
             for r in range(2, ws_z.max_row + 1):
                 host  = str(ws_z.cell(row=r, column=host_c).value or '').strip()
@@ -675,15 +1341,16 @@ def process_file(input_path, output_path, cut_df, log):
         ws_m   = wb['Mismatches']
         header = [ws_m.cell(row=1, column=c).value for c in range(1, ws_m.max_column + 1)]
 
-        # In v2 the write step already stripped most Active cols and renamed A-side to Act.*.
-        # Only drop any lingering 'Active Host' here.
-        act_drop = {'Active Host'}
+        # Drop only the Active-side columns. Expected-side columns are kept
+        # so they can sit between Destination_port and the Possible/Z blocks
+        # in the final layout.
+        act_drop = {'Active Host', 'Act. Interface', 'Act. Rack', 'Act. Elevation'}
         for idx in sorted([i+1 for i, h in enumerate(header) if h in act_drop], reverse=True):
             ws_m.delete_cols(idx)
         header = [ws_m.cell(row=1, column=c).value for c in range(1, ws_m.max_column + 1)]
 
-        h_idx = header.index('Act. Hostname') + 1
-        i_idx = header.index('Act. Interface') + 1
+        h_idx = header.index('Hostname') + 1
+        i_idx = header.index('Interface') + 1
 
         # Collect act data per row
         act_rows = []
@@ -748,20 +1415,28 @@ def process_file(input_path, output_path, cut_df, log):
                 cell.fill   = pink_fill
                 cell.border = bd
 
-        # Write Active Z columns
-        act_z_cols = ['Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation']
+        # Write the active-neighbour Z columns as a second "Possible" block.
+        # Renamed with a "Possible Z" prefix (so they don't collide with the
+        # primary Possible block above) and highlighted pink like the rest.
+        act_z_cols = [
+            ('Possible Z Hostname',  'Z Hostname'),
+            ('Possible Z Interface', 'Z Interface'),
+            ('Possible Z L/R',       'Z L/R'),
+            ('Possible Z Rack',      'Z Rack'),
+            ('Possible Z Elevation', 'Z Elevation'),
+        ]
         start2 = ws_m.max_column + 1
-        for c_off, col_name in enumerate(act_z_cols):
+        for c_off, (disp_name, src_key) in enumerate(act_z_cols):
             col_idx = start2 + c_off
             pink_col_indices.append(col_idx)
-            hdr = ws_m.cell(row=1, column=col_idx, value=col_name)
+            hdr = ws_m.cell(row=1, column=col_idx, value=disp_name)
             hdr.font = Font(bold=True, name='Arial', size=10)
             hdr.alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
             hdr.fill  = yellow_fill
             hdr.border = bd
-            ws_m.column_dimensions[get_column_letter(col_idx)].width = max(len(col_name)+3, 14)
+            ws_m.column_dimensions[get_column_letter(col_idx)].width = max(len(disp_name)+3, 14)
             for r_off, act in enumerate(act_rows):
-                val = act.get(col_name, '')
+                val = act.get(src_key, '')
                 cell = ws_m.cell(row=r_off+2, column=col_idx,
                                  value=val if val != '' else None)
                 cell.fill   = pink_fill
@@ -770,16 +1445,80 @@ def process_file(input_path, output_path, cut_df, log):
     # ── 6c. Strip unwanted columns across every tab ─────────────────────────
     if COLUMNS_TO_REMOVE:
         log(f"  · Stripping columns: {', '.join(COLUMNS_TO_REMOVE)}")
-        drop_set = set(COLUMNS_TO_REMOVE)
+
+        def _norm_col(s):
+            return (str(s)
+                    .replace('\u2011', '-').replace('\u2013', '-')
+                    .replace('\u2014', '-')
+                    .strip().lower())
+
+        drop_set = {_norm_col(c) for c in COLUMNS_TO_REMOVE}
         for sheet_name in wb.sheetnames:
             ws_x = wb[sheet_name]
             header = [ws_x.cell(row=1, column=c).value
                       for c in range(1, ws_x.max_column + 1)]
             # Find 1-based indices to drop, delete right-to-left so earlier
             # indices stay valid as columns shift left.
-            to_drop = [i + 1 for i, h in enumerate(header) if h in drop_set]
+            to_drop = [i + 1 for i, h in enumerate(header)
+                       if _norm_col(h) in drop_set]
             for idx in sorted(to_drop, reverse=True):
                 ws_x.delete_cols(idx)
+
+    # ── 6d. Remove duplicate rows (Downlinks / Optics / combined_fec) ────────
+    # Runs after all population/enrichment so the comparison sees final values.
+    # Downlinks & combined_fec: drop exact-duplicate rows (keep first).
+    # Optics: collapse to one row per link (Hostname+Interface+Source_port+
+    #         Destination_port), keeping the row with the highest Measured (dBm).
+    def _dedup_exact(ws_d):
+        seen, to_delete = set(), []
+        for r in range(2, ws_d.max_row + 1):
+            row_key = tuple(
+                '' if ws_d.cell(row=r, column=c).value is None
+                else str(ws_d.cell(row=r, column=c).value)
+                for c in range(1, ws_d.max_column + 1)
+            )
+            if row_key in seen:
+                to_delete.append(r)
+            else:
+                seen.add(row_key)
+        for r in sorted(to_delete, reverse=True):
+            ws_d.delete_rows(r)
+        return len(to_delete)
+
+    def _dedup_optics_keep_highest(ws_d):
+        header = [ws_d.cell(row=1, column=c).value
+                  for c in range(1, ws_d.max_column + 1)]
+        link_names = ['Hostname', 'Interface', 'Source_port', 'Destination_port']
+        if not all(n in header for n in link_names) or 'Measured (dBm)' not in header:
+            return _dedup_exact(ws_d)   # fall back if expected columns absent
+        key_idx  = [header.index(n) + 1 for n in link_names]
+        meas_idx = header.index('Measured (dBm)') + 1
+        # For each link key, find the row with the highest measured value.
+        best_row = {}     # key -> (measured_float, row_number)
+        for r in range(2, ws_d.max_row + 1):
+            key = tuple(str(ws_d.cell(row=r, column=c).value or '').strip()
+                        for c in key_idx)
+            try:
+                meas = float(ws_d.cell(row=r, column=meas_idx).value)
+            except (TypeError, ValueError):
+                meas = float('-inf')
+            if key not in best_row or meas > best_row[key][0]:
+                best_row[key] = (meas, r)
+        keep = {row for _, row in best_row.values()}
+        to_delete = [r for r in range(2, ws_d.max_row + 1) if r not in keep]
+        for r in sorted(to_delete, reverse=True):
+            ws_d.delete_rows(r)
+        return len(to_delete)
+
+    for tab in ('Downlinks', 'Optics', 'combined_fec',
+                'T1 Optics', 'T1 combined_fec'):
+        if tab not in wb.sheetnames:
+            continue
+        removed = (_dedup_optics_keep_highest(wb[tab])
+                   if tab in ('Optics', 'T1 Optics')
+                   else _dedup_exact(wb[tab]))
+        if removed:
+            log(f"  · Removed {removed} duplicate row(s) from {tab}")
 
     # ── 7. Summary tab (per Rack breakdown) ─────────────────────────────────
     log("  · Creating Summary tab")
@@ -802,11 +1541,10 @@ def process_file(input_path, output_path, cut_df, log):
     for sname in wb.sheetnames:
         ws_tmp = wb[sname]
         hdr = [ws_tmp.cell(row=1, column=c).value for c in range(1, ws_tmp.max_column+1)]
-        # Support both legacy 'Rack' and the v2 'Act. Rack' (used in Downlinks/Mismatches after the A-side rename)
-        if 'Rack' not in hdr and 'Act. Rack' not in hdr:
+        if 'Rack' not in hdr:
             tab_rack[sname] = {}
             continue
-        rack_col = (hdr.index('Act. Rack') + 1 if 'Act. Rack' in hdr else hdr.index('Rack') + 1)
+        rack_col = hdr.index('Rack') + 1
         counts = {}
         for r in range(2, ws_tmp.max_row + 1):
             val = ws_tmp.cell(row=r, column=rack_col).value
@@ -876,19 +1614,17 @@ def process_file(input_path, output_path, cut_df, log):
 
     # ── 8. No fill + borders (preserve pink in Mismatches) ──────────────────
     log("  · Removing fills and applying borders")
-    # The earlier pink_col_indices was captured in step 6b, but step 6c (column
-    # strip) deletes columns from the middle of Mismatches afterwards, which
-    # shifts all Possible/Z columns left and invalidates those stale indices.
+    pink_col_indices = []
     # Recompute by name from the current header so every pink column gets
     # filled correctly regardless of how many columns were stripped.
     if 'Mismatches' in wb.sheetnames:
         ws_m = wb['Mismatches']
         m_header = [ws_m.cell(row=1, column=c).value
                     for c in range(1, ws_m.max_column + 1)]
-        Z_NAMES = {'Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation'}
+        # Only the Possible columns are pink; Z columns are left unfilled.
         pink_col_indices = [
             i + 1 for i, h in enumerate(m_header)
-            if (h and (str(h).startswith('Possible ') or h in Z_NAMES))
+            if (h and str(h).startswith('Possible '))
         ]
 
     for sheet_name in wb.sheetnames:
@@ -924,85 +1660,131 @@ def process_file(input_path, output_path, cut_df, log):
         if ws.max_row > 1 and ws.max_column > 0:
             ws.auto_filter.ref = ws.dimensions
 
-    # ── 8d. Grey-out Optics rows that are matched in Downlinks ──────────────
-    if 'Optics' in wb.sheetnames and 'Downlinks' in wb.sheetnames:
-        log("  · Greying out matched Optics rows")
+    # ── 8d. Grey-out rows whose link also appears in a reference tab ────────
+    #   Optics          greyed where the link is interface-down (Downlinks)
+    #   combined_fec    greyed where the link is also flagged in Optics
+    #   T1 Optics       greyed where the same link is also flagged in Optics
+    #   T1 combined_fec greyed where the same link is also flagged in T1 Optics
+    #
+    # The standard tabs are all T0-oriented, so a column-by-column key compare
+    # (`_grey_matching`) recognises the same link. The T1 tabs are flipped
+    # relative to the standard Optics tab (local end = T1, Z end = T0), so the
+    # same physical link has mirrored columns there — those comparisons use an
+    # orientation-independent endpoint-pair key (`_grey_matching_link`) instead.
+    LINK_COLS = [
+        'Hostname', 'Interface', 'L/R', 'Rack', 'Elevation',
+        'Source_port', 'DMARC1', 'DMARC2', 'Destination_port',
+        'Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation',
+    ]
+    GREY_FONT_COLOR = 'FFD3D3D3'  # light grey
 
-        # Use Act. variants for Downlinks (v2 naming) + the enriched columns.
-        MATCH_COLS = [
-            'Act. Hostname', 'Act. Interface', 'Act. L/R', 'Act. Rack', 'Act. Elevation',
-            'Source_port', 'DMARC1', 'DMARC2', 'Destination_port',
-            'Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation',
-        ]
-        GREY_FONT_COLOR = 'FFD3D3D3'  # light grey
+    def _grey_row(ws, r):
+        for c in range(1, ws.max_column + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.font = Font(
+                bold=cell.font.bold if cell.font else False,
+                name=(cell.font.name if cell.font else None) or 'Arial',
+                size=(cell.font.size if cell.font else None) or 10,
+                color=GREY_FONT_COLOR,
+            )
 
-        ws_dl = wb['Downlinks']
-        dl_header = [ws_dl.cell(row=1, column=c).value
-                     for c in range(1, ws_dl.max_column + 1)]
-
-        # Build a set of tuples from Downlinks for all match columns present
-        dl_match_cols = [c for c in MATCH_COLS if c in dl_header]
-        dl_col_idx    = {c: dl_header.index(c) + 1 for c in dl_match_cols}
-
-        dl_keys = set()
-        for r in range(2, ws_dl.max_row + 1):
+    def _grey_matching(target_tab, ref_tab):
+        """Grey target rows whose link columns exactly match a reference row.
+        Use only when both tabs share the same orientation."""
+        if target_tab not in wb.sheetnames or ref_tab not in wb.sheetnames:
+            return
+        ws_t = wb[target_tab]
+        ws_r = wb[ref_tab]
+        t_hdr = [ws_t.cell(row=1, column=c).value
+                 for c in range(1, ws_t.max_column + 1)]
+        r_hdr = [ws_r.cell(row=1, column=c).value
+                 for c in range(1, ws_r.max_column + 1)]
+        common = [c for c in LINK_COLS if c in t_hdr and c in r_hdr]
+        if not common:
+            log(f"    ⚠ No shared link columns between {target_tab} and "
+                f"{ref_tab} — skipped")
+            return
+        log(f"  · Greying out {target_tab} rows that match {ref_tab}")
+        t_idx = {c: t_hdr.index(c) + 1 for c in common}
+        r_idx = {c: r_hdr.index(c) + 1 for c in common}
+        ref_keys = set()
+        for r in range(2, ws_r.max_row + 1):
+            ref_keys.add(tuple(
+                str(ws_r.cell(row=r, column=r_idx[c]).value or '').strip()
+                for c in common))
+        for r in range(2, ws_t.max_row + 1):
             key = tuple(
-                str(ws_dl.cell(row=r, column=dl_col_idx[c]).value or '').strip()
-                for c in dl_match_cols
-            )
-            dl_keys.add(key)
+                str(ws_t.cell(row=r, column=t_idx[c]).value or '').strip()
+                for c in common)
+            if key in ref_keys:
+                _grey_row(ws_t, r)
 
-        ws_op = wb['Optics']
-        op_header = [ws_op.cell(row=1, column=c).value
-                     for c in range(1, ws_op.max_column + 1)]
+    def _grey_matching_link(target_tab, ref_tab):
+        """Grey target rows whose physical link also appears in the reference
+        tab, matching on an orientation-independent endpoint pair so a flipped
+        (T1-side) row still matches its standard (T0-side) counterpart.
 
-        # Only match on columns present in both sheets
-        common_cols  = [c for c in dl_match_cols if c in op_header]
-        op_col_idx   = {c: op_header.index(c) + 1 for c in common_cols}
-        dl_col_idx_c = {c: dl_header.index(c) + 1 for c in common_cols}
+        A link is the unordered pair of its two ends — (Hostname, Interface)
+        and (Z Hostname, Z Interface) — so the same cable matches regardless of
+        which end each tab calls 'local'."""
+        if target_tab not in wb.sheetnames or ref_tab not in wb.sheetnames:
+            return
+        ws_t = wb[target_tab]
+        ws_r = wb[ref_tab]
+        need = ['Hostname', 'Interface', 'Z Hostname', 'Z Interface']
+        t_hdr = [ws_t.cell(row=1, column=c).value
+                 for c in range(1, ws_t.max_column + 1)]
+        r_hdr = [ws_r.cell(row=1, column=c).value
+                 for c in range(1, ws_r.max_column + 1)]
+        if not all(c in t_hdr for c in need) or not all(c in r_hdr for c in need):
+            log(f"    ⚠ Missing endpoint columns between {target_tab} and "
+                f"{ref_tab} — skipped")
+            return
+        log(f"  · Greying out {target_tab} rows whose link is in {ref_tab}")
+        ti = {c: t_hdr.index(c) + 1 for c in need}
+        ri = {c: r_hdr.index(c) + 1 for c in need}
 
-        # Rebuild dl_keys using only common columns
-        dl_keys_common = set()
-        for r in range(2, ws_dl.max_row + 1):
-            key = tuple(
-                str(ws_dl.cell(row=r, column=dl_col_idx_c[c]).value or '').strip()
-                for c in common_cols
-            )
-            dl_keys_common.add(key)
+        def pair_key(ws, r, idx):
+            a = (str(ws.cell(row=r, column=idx['Hostname']).value or '').strip(),
+                 str(ws.cell(row=r, column=idx['Interface']).value or '').strip())
+            z = (str(ws.cell(row=r, column=idx['Z Hostname']).value or '').strip(),
+                 str(ws.cell(row=r, column=idx['Z Interface']).value or '').strip())
+            if not a[0] or not z[0]:
+                return None          # incomplete endpoint — don't match
+            return tuple(sorted([a, z]))
 
-        for r in range(2, ws_op.max_row + 1):
-            op_key = tuple(
-                str(ws_op.cell(row=r, column=op_col_idx[c]).value or '').strip()
-                for c in common_cols
-            )
-            if op_key in dl_keys_common:
-                for c in range(1, ws_op.max_column + 1):
-                    cell = ws_op.cell(row=r, column=c)
-                    cell.font = Font(
-                        bold=cell.font.bold if cell.font else False,
-                        name=(cell.font.name if cell.font else None) or 'Arial',
-                        size=(cell.font.size if cell.font else None) or 10,
-                        color=GREY_FONT_COLOR,
-                    )
+        ref_keys = set()
+        for r in range(2, ws_r.max_row + 1):
+            k = pair_key(ws_r, r, ri)
+            if k:
+                ref_keys.add(k)
+        for r in range(2, ws_t.max_row + 1):
+            k = pair_key(ws_t, r, ti)
+            if k and k in ref_keys:
+                _grey_row(ws_t, r)
+
+    _grey_matching('Optics',       'Downlinks')
+    _grey_matching('combined_fec', 'Optics')
+    _grey_matching_link('T1 Optics',       'Optics')
+    _grey_matching_link('T1 combined_fec', 'T1 Optics')
 
     # ── 8e. Expand all columns and rows on every sheet ──────────────────────
     log("  · Expanding all columns and rows")
     for sheet_name in wb.sheetnames:
         autofit_sheet(wb[sheet_name])
 
-    # ── 8f. Highlight mismatch groups (any size, incl. 3+) with bold grid lines ─
-    log("  · Highlighting mismatch groups (bold borders)")
+    # ── 8f. Highlight reciprocal mismatch pairs orange ──────────────────────
+    log("  · Highlighting reciprocal mismatch pairs")
     highlight_mismatch_pairs(wb, log)
 
-    # ── 8g. Build Mismatch↔Downlink cross-reference tab (v2) ─────────────────
-    log("  · Building Mismatch↔Downlink tab")
-    build_downlink_mismatch_tab(wb, log)
-
-    # Re-sort tabs now that Mismatch↔Downlink may have been added (primary
-    # tabs stay in the documented order; the cross-ref tab goes with the rest).
-    existing2 = [s for s in desired if s in wb.sheetnames]
-    others2   = [s for s in wb.sheetnames if s not in desired]
-    wb._sheets = [wb[n] for n in others2 + existing2]
+    # ── 8g. Keep only the whitelisted output tabs ───────────────────────────
+    # Anything not in this set is dropped, whatever it's called. Matching is
+    # case-insensitive so 'combined_fec'/'Combined_Fec' etc. all survive.
+    keep_lower = {t.lower() for t in TABS_TO_KEEP}
+    for existing in list(wb.sheetnames):
+        if existing.lower() not in keep_lower:
+            log(f"  · Removing {existing} (not in keep list)")
+            del wb[existing]
 
     wb.save(output_path)
 
@@ -1012,9 +1794,8 @@ def process_file(input_path, output_path, cut_df, log):
         for sheet_name in wb.sheetnames:
             ws     = wb[sheet_name]
             header = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column+1)]
-            if 'Rack' in header or 'Act. Rack' in header:
-                rc = (header.index('Act. Rack') + 1 if 'Act. Rack' in header
-                      else header.index('Rack') + 1)
+            if 'Rack' in header:
+                rc = header.index('Rack') + 1
                 for r in range(2, ws.max_row + 1):
                     val = ws.cell(row=r, column=rc).value
                     if val is not None:
@@ -1033,39 +1814,28 @@ def process_file(input_path, output_path, cut_df, log):
         log(f"  ⚠ Could not rename by Rack: {e}")
 
     log(f"  ✓ Saved → {os.path.basename(output_path)}")
+
     return output_path
 
 
-# ── Mismatch group detection / bold-border grouping (v2) ─────────────────────
+# ── Mismatch pair detection / highlight ──────────────────────────────────────
 
-def _thick_side():
-    """Medium (bold) side for group delimiters."""
-    return Side(style='medium', color='000000')
-
-
-def _group_border(is_first, is_last):
-    """Return a border that puts a thick line on the top of the first row
-    of a mismatch group and on the bottom of the last row of the group.
-    All other sides (and non-group rows) use thin borders. This replaces
-    the previous orange/yellow fill pairing with clear visual grouping via
-    bold grid lines. Supports groups of any size (including 3+)."""
-    top    = _thick_side() if is_first else Side(style='thin', color='000000')
-    bottom = _thick_side() if is_last  else Side(style='thin', color='000000')
-    s = Side(style='thin', color='000000')
-    return Border(left=s, right=s, top=top, bottom=bottom)
-
+ORANGE = 'FFA500'   # reciprocal-swap pair highlight
 
 def highlight_mismatch_pairs(wb, log=lambda *_: None):
-    """Mismatches tab: detect swap cycles of ANY size using Union-Find,
-    group matched rows together with no fill, and draw thick border lines
-    above the first and below the last row of each group.
+    """Mismatches tab: find reciprocal swap pairs and highlight them orange.
 
-    Uses the Act.-prefixed A-side columns (from the v2 split/rename) matched
-    against the Possible-* columns. Any connected component of size >1 is
-    treated as a group (pairs, triples, larger cycles all supported).
-    Rows within each group keep their relative original order; groups are
-    ordered by the first appearance of their lowest original index.
-    Singletons (unconnected) are placed after all groups.
+    Two mismatch rows are a *pair* when one row's A-side block
+    (Hostname, Interface, L/R, Rack, Elevation, Source_port, Destination_port)
+    is EXACTLY equal to the other row's Possible block (the fall-back lookup of
+    where that row's cable actually lands) — and vice versa. That reciprocal
+    match means the two cables are simply swapped with each other (e.g. the
+    s0/s1 strands of a pair are crossed).
+
+    For every pair found, the partner row is moved directly beneath its match
+    (inserted as the row under) and the 12-column block
+    Hostname … Exp. Elevation of BOTH rows is filled orange. Unpaired rows are
+    left where they are with no orange fill.
     """
     if 'Mismatches' not in wb.sheetnames:
         return
@@ -1078,11 +1848,15 @@ def highlight_mismatch_pairs(wb, log=lambda *_: None):
     def idxs(names):
         return [header.index(n) + 1 for n in names if n in header]
 
-    a_cols = idxs(['Act. Hostname', 'Act. Interface', 'Act. L/R', 'Act. Rack', 'Act. Elevation',
+    a_cols = idxs(['Hostname', 'Interface', 'L/R', 'Rack', 'Elevation',
                    'Source_port', 'Destination_port'])
     p_cols = idxs(['Possible Hostname', 'Possible Interface', 'Possible L/R',
                    'Possible Rack', 'Possible Elevation',
                    'Possible Source_port', 'Possible Destination_port'])
+    orange_cols = idxs(['Hostname', 'Interface', 'L/R', 'Rack', 'Elevation',
+                        'Source_port', 'DMARC1', 'DMARC2', 'Destination_port',
+                        'Z Hostname', 'Z Interface', 'Z L/R',
+                        'Z Rack', 'Z Elevation'])
     if not a_cols or not p_cols:
         return
 
@@ -1097,151 +1871,79 @@ def highlight_mismatch_pairs(wb, log=lambda *_: None):
     a_keys = [key(rv, a_cols) for rv in rows]
     p_keys = [key(rv, p_cols) for rv in rows]
 
-    from collections import defaultdict
-    p_key_map = defaultdict(list)
-    for i, pk in enumerate(p_keys):
-        if any(pk):
-            p_key_map[pk].append(i)
-
-    # Union-Find to connect any A that matches any P (transitive → 3+ groups)
-    parent = list(range(len(rows)))
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-    def union(x, y):
-        parent[find(x)] = find(y)
-
-    for i, ak in enumerate(a_keys):
-        if not any(ak):
+    n = len(rows)
+    partner = [None] * n
+    for i in range(n):
+        if partner[i] is not None or not any(a_keys[i]):
             continue
-        for j in p_key_map.get(ak, []):
-            if i != j:
-                union(i, j)
+        for j in range(i + 1, n):
+            if partner[j] is not None:
+                continue
+            if a_keys[i] == p_keys[j] and a_keys[j] == p_keys[i]:
+                partner[i] = j
+                partner[j] = i
+                break
 
-    comp = defaultdict(list)
-    for i in range(len(rows)):
-        comp[find(i)].append(i)
-
-    grouped = [sorted(m) for m in comp.values() if len(m) > 1]
-    singletons = [m[0] for m in comp.values() if len(m) == 1]
-
+    # New row order: all pairs first (each partner directly under its match,
+    # in order of first appearance), then every unpaired row pushed to the end.
+    placed = [False] * n
     order = []
-    group_bounds = {}
-    for members in sorted(grouped, key=lambda m: m[0]):
-        for rank, src_i in enumerate(members):
-            off = len(order)
-            group_bounds[off] = (rank == 0, rank == len(members) - 1)
-            order.append(src_i)
-    for src_i in singletons:
-        order.append(src_i)
+    for i in range(n):
+        if placed[i] or partner[i] is None:
+            continue
+        j = partner[i]
+        order.append(i); placed[i] = True
+        if not placed[j]:
+            order.append(j); placed[j] = True
+    for i in range(n):                       # leftover = unpaired rows
+        if not placed[i]:
+            order.append(i); placed[i] = True
 
-    log(f"  · Found {len(grouped)} mismatch group(s) covering "
-        f"{sum(len(m) for m in grouped)} rows "
-        f"(sizes: {sorted([len(m) for m in grouped], reverse=True)})")
+    paired = {i for i in range(n) if partner[i] is not None}
+    npairs = len(paired) // 2
 
-    pink_names = {'Possible Hostname', 'Possible Interface', 'Possible L/R',
-                  'Possible Rack', 'Possible Elevation', 'Possible Source_port',
-                  'Possible DMARC1', 'Possible DMARC2', 'Possible Destination_port',
-                  'Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation'}
-    pink_idx  = {header.index(nm) + 1 for nm in pink_names if nm in header}
-    pink_fill = PatternFill('solid', start_color=PINK)
-    no_fill   = PatternFill(fill_type=None)
+    # Number the pairs in the order their first row appears, so the colour can
+    # alternate: 1st pair orange, 2nd pair yellow, 3rd orange, 4th yellow, …
+    pair_no = {}
+    counter = 0
+    for i in range(n):
+        j = partner[i]
+        if j is not None and i < j:
+            pair_no[i] = counter
+            pair_no[j] = counter
+            counter += 1
+
+    # Re-apply column-determined formatting (pink stays on Possible cols only)
+    # plus the alternating pair highlight on the listed columns.
+    bd          = thin_border()
+    pink_fill   = PatternFill('solid', start_color=PINK)
+    orange_fill = PatternFill('solid', start_color=ORANGE)
+    yellow_fill = PatternFill('solid', start_color=YELLOW)
+    pink_names  = {'Possible Hostname', 'Possible Interface', 'Possible L/R',
+                   'Possible Rack', 'Possible Elevation', 'Possible Source_port',
+                   'Possible DMARC1', 'Possible DMARC2', 'Possible Destination_port'}
+    # Pink applies to every "Possible *" column (including the Possible Z block).
+    pink_idx    = {i + 1 for i, h in enumerate(header)
+                   if h and (h in pink_names or str(h).startswith('Possible '))}
+    orange_set  = set(orange_cols)
+    no_fill     = PatternFill(fill_type=None)
 
     for out_off, src_i in enumerate(order):
         r  = out_off + 2
         rv = rows[src_i]
-        bounds = group_bounds.get(out_off)
+        is_pair = src_i in paired
+        pair_fill = (orange_fill if pair_no.get(src_i, 0) % 2 == 0
+                     else yellow_fill)
         for c in range(1, ncol + 1):
             cell = ws.cell(row=r, column=c, value=rv[c - 1])
-            cell.font      = Font(name='Arial', size=10)
+            cell.font = Font(name='Arial', size=10)
             cell.alignment = Alignment(horizontal='center', vertical='center')
-            cell.fill      = pink_fill if c in pink_idx else no_fill
-            cell.border    = (_group_border(*bounds) if bounds is not None
-                              else thin_border())
+            cell.border = bd
+            if is_pair and c in orange_set:
+                cell.fill = pair_fill
+            elif c in pink_idx:
+                cell.fill = pink_fill
+            else:
+                cell.fill = no_fill
 
-
-def build_downlink_mismatch_tab(wb, log=lambda *_: None):
-    """Create a 'Mismatch↔Downlink' tab listing mismatch rows whose
-    Expected Hostname + Exp. Interface appears in the Downlinks tab.
-
-    This surfaces cases where a mismatch observed on one side of the link
-    corresponds to a pure "interface down" (downlink) on the other side.
-    """
-    if 'Mismatches' not in wb.sheetnames or 'Downlinks' not in wb.sheetnames:
-        return
-
-    ws_m = wb['Mismatches']
-    ws_d = wb['Downlinks']
-
-    m_header = [ws_m.cell(row=1, column=c).value for c in range(1, ws_m.max_column + 1)]
-    d_header = [ws_d.cell(row=1, column=c).value for c in range(1, ws_d.max_column + 1)]
-
-    dl_host_col = next((i+1 for i, h in enumerate(d_header)
-                        if h in ('Act. Hostname', 'Hostname')), None)
-    dl_int_col  = next((i+1 for i, h in enumerate(d_header)
-                        if h in ('Act. Interface', 'Interface')), None)
-    if dl_host_col is None or dl_int_col is None:
-        log("  ⚠ Downlinks tab missing Hostname/Interface — skipping Mismatch↔Downlink tab")
-        return
-
-    dl_pairs = set()
-    for r in range(2, ws_d.max_row + 1):
-        h = str(ws_d.cell(row=r, column=dl_host_col).value or '').strip()
-        i = str(ws_d.cell(row=r, column=dl_int_col).value  or '').strip()
-        if h:
-            dl_pairs.add((h, i))
-
-    exp_h_col = next((i+1 for i, h in enumerate(m_header) if h == 'Expected Hostname'), None)
-    exp_i_col = next((i+1 for i, h in enumerate(m_header) if h == 'Exp. Interface'), None)
-    if exp_h_col is None or exp_i_col is None:
-        log("  ⚠ Mismatches tab missing Expected Hostname/Exp. Interface — skipping Mismatch↔Downlink tab")
-        return
-
-    matched_rows = []
-    for r in range(2, ws_m.max_row + 1):
-        eh = str(ws_m.cell(row=r, column=exp_h_col).value or '').strip()
-        ei = str(ws_m.cell(row=r, column=exp_i_col).value or '').strip()
-        if (eh, ei) in dl_pairs:
-            matched_rows.append([ws_m.cell(row=r, column=c).value
-                                  for c in range(1, ws_m.max_column + 1)])
-
-    log(f"  · Mismatch↔Downlink: {len(matched_rows)} row(s) matched")
-    if not matched_rows:
-        return
-
-    if 'Mismatch\u2194Downlink' in wb.sheetnames:
-        del wb['Mismatch\u2194Downlink']
-    ws_x = wb.create_sheet('Mismatch\u2194Downlink')
-
-    bd          = thin_border()
-    yellow_fill = PatternFill('solid', start_color=YELLOW)
-    pink_fill   = PatternFill('solid', start_color=PINK)
-    pink_names  = {'Possible Hostname', 'Possible Interface', 'Possible L/R',
-                   'Possible Rack', 'Possible Elevation', 'Possible Source_port',
-                   'Possible DMARC1', 'Possible DMARC2', 'Possible Destination_port',
-                   'Z Hostname', 'Z Interface', 'Z L/R', 'Z Rack', 'Z Elevation'}
-    pink_idx    = {m_header.index(nm) + 1 for nm in pink_names if nm in m_header}
-
-    for c, h in enumerate(m_header, 1):
-        cell = ws_x.cell(row=1, column=c, value=h)
-        cell.font      = Font(bold=True, name='Arial', size=10)
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-        cell.fill      = yellow_fill
-        cell.border    = bd
-
-    for r_off, rv in enumerate(matched_rows):
-        r = r_off + 2
-        for c, val in enumerate(rv, 1):
-            cell = ws_x.cell(row=r, column=c, value=val)
-            cell.font      = Font(name='Arial', size=10)
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-            cell.fill      = pink_fill if c in pink_idx else PatternFill(fill_type=None)
-            cell.border    = bd
-
-    for c, h in enumerate(m_header, 1):
-        vals = [str(h or '')] + [str(rv[c-1] or '') for rv in matched_rows]
-        ws_x.column_dimensions[get_column_letter(c)].width = min(max(len(v) for v in vals) + 4, 80)
-
-    ws_x.freeze_panes = 'A2'
+    log(f"  · Highlighted {npairs} mismatch pair(s) (alternating orange/yellow)")

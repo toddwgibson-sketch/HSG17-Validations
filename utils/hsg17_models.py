@@ -612,27 +612,49 @@ def extract_filtered_counts_from_summary(output_path: str) -> dict:
             return {}
 
         ws = wb["Summary"]
-        counts = {}
+        counts: dict[str, int] = {}
+        total_col_idx = None
+
+        for row in ws.iter_rows(min_row=1, max_row=10, values_only=True):
+            if not row:
+                continue
+            for i, cell in enumerate(row):
+                if cell is not None and str(cell).strip().lower() == "total":
+                    total_col_idx = i
+                    break
+            if total_col_idx is not None:
+                break
+
+        skip_names = {"tab name", "total", "tab summary by rack", "note"}
 
         for row in ws.iter_rows(min_row=1, values_only=True):
             if not row or not row[0]:
                 continue
             name = str(row[0]).strip().lower()
-            # The Total column is usually the last one
-            total_val = row[-1] if len(row) > 1 and row[-1] is not None else 0
+            if name in skip_names:
+                continue
+            if total_col_idx is not None and total_col_idx < len(row):
+                total_val = row[total_col_idx]
+            else:
+                total_val = next(
+                    (v for v in reversed(row) if v is not None and str(v).strip() != ""),
+                    0,
+                )
             try:
                 cnt = int(total_val)
             except (ValueError, TypeError):
                 cnt = 0
+            if cnt <= 0:
+                continue
 
-            if "mismatch" in name or "lldp" in name:
-                counts["LLDP Mismatch + Link Down"] = cnt
+            if name == "downlinks" or ("interface" in name and "down" in name):
+                counts["Interface Down Errors"] = counts.get("Interface Down Errors", 0) + cnt
+            elif "mismatch" in name or "lldp" in name:
+                counts["LLDP Mismatch + Link Down"] = counts.get("LLDP Mismatch + Link Down", 0) + cnt
             elif "optic" in name:
-                counts["Optic Errors"] = cnt
+                counts["Optic Errors"] = counts.get("Optic Errors", 0) + cnt
             elif "fec" in name or "ber" in name:
-                counts["FEC_BER Errors"] = cnt
-            elif "interface" in name and "down" in name:
-                counts["Interface Down Errors"] = cnt
+                counts["FEC_BER Errors"] = counts.get("FEC_BER Errors", 0) + cnt
 
         return counts
     except Exception:

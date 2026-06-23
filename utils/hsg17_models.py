@@ -615,17 +615,18 @@ def extract_filtered_counts_from_summary(output_path: str) -> dict:
         counts: dict[str, int] = {}
         total_col_idx = None
 
-        for row in ws.iter_rows(min_row=1, max_row=10, values_only=True):
+        # Only scan header row(s) for the count column — not data rows. T0-to-Host
+        # Summary ends with a "Total" label in column A; scanning all rows used to
+        # pick col A (names) instead of col B (counts).
+        count_headers = {"total", "count"}
+        for row in ws.iter_rows(min_row=1, max_row=2, values_only=True):
             if not row:
                 continue
             for i, cell in enumerate(row):
-                if cell is not None and str(cell).strip().lower() == "total":
+                if cell is not None and str(cell).strip().lower() in count_headers:
                     total_col_idx = i
-                    break
-            if total_col_idx is not None:
-                break
 
-        skip_names = {"tab name", "total", "tab summary by rack", "note"}
+        skip_names = {"tab name", "total", "tab summary by rack", "note", "category"}
 
         for row in ws.iter_rows(min_row=1, values_only=True):
             if not row or not row[0]:

@@ -4,7 +4,7 @@ HSG17 T0-to-Host LVV Formatter — Streamlit page
 
 Core formatter logic lives in:
     utils/t0_to_host_formatter.py
-(exactly the logic from the reference lvv_portal_formatter_T0toHOST)
+(synced from HOPS_CODE19 reference in Desktop/HSG17 Optics Errors/second one)
 
 This page is the UI wrapper + HSG17-specific silent logging to the central
 validation_error_log (Placement Group derivation + counts for the Dashboard).
